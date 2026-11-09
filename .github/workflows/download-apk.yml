@@ -1,0 +1,21 @@
+name: Download Zall RW APK
+
+on:
+workflow_dispatch:
+
+jobs:
+download:
+runs-on: ubuntu-latest
+steps:
+- name: Download APK from Google Drive
+run: |
+pip install gdown
+gdown "https://drive.google.com/uc?id=1lnhexImqC_QN4pobsE2idUYlszTsPQQu" -O ZallRW.apk
+test -s ZallRW.apk
+ls -lh ZallRW.apk
+
+  - name: Upload original APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: ZallRW-original
+      path: ZallRW.apk
