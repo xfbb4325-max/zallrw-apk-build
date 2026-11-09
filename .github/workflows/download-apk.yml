@@ -9,8 +9,8 @@ runs-on: ubuntu-latest
 steps:
 - name: Download APK from Google Drive
 run: |
-pip install gdown
-gdown "https://drive.google.com/uc?id=1lnhexImqC_QN4pobsE2idUYlszTsPQQu" -O ZallRW.apk
+python -m pip install gdown
+python -m gdown "https://drive.google.com/uc?id=1lnhexImqC_QN4pobsE2idUYlszTsPQQu" -O ZallRW.apk
 test -s ZallRW.apk
 ls -lh ZallRW.apk
 
