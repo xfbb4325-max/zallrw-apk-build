@@ -16,14 +16,18 @@ uses: actions/download-artifact@v4
 with:
 name: ZallRW-original
 path: original
-run-id: "42607124854"
-github-token: "${{ secrets.GITHUB_TOKEN }}"
+run-id: 42607124854
+github-token: ${{ secrets.GITHUB_TOKEN }}
 
   - name: Install Apktool
-    run: "sudo apt-get update && sudo apt-get install -y apktool"
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y apktool
 
   - name: Decode APK
-    run: "apktool d original/ZallRW.apk -o project -f"
+    run: |
+      apktool d original/ZallRW.apk -o project -f
 
   - name: Inspect backend URLs
-    run: "grep -RhoE 'https?://[^\" ]+' project --include='*.smali' | sort -u"
+    run: |
+      grep -RhoE 'https?://[^" ]+' project --include='*.smali' | sort -u
