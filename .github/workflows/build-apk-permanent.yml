@@ -1,87 +1,6 @@
-name: Build Zall RW Permanent APK
-
-on:
-  workflow_dispatch:
-
-permissions:
-  actions: read
-  contents: read
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download original APK
-        uses: actions/download-artifact@v4
-        with:
-          name: ZallRW-original
-          path: original
-          run-id: "42607124854"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk zip unzip curl file jq apksigner zipalign openssl
-
-      - name: Download Smali tools
-        run: |
-          API="https://api.github.com/repos/baksmali/smali/releases/latest"
-          RELEASE=$(curl -fsSL "$API")
-
-          BAKSMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
-          SMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
-
-          test -n "$BAKSMALI_URL"
-          test -n "$SMALI_URL"
-
-          curl -fL --retry 3 -o baksmali.jar "$BAKSMALI_URL"
-          curl -fL --retry 3 -o smali.jar "$SMALI_URL"
-
-          echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
-          echo "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  smali.jar" | sha256sum -c -
-
-      - name: Restore permanent signing key
-        env:
-          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
-        run: |
-          set -e
-          test -f signing/zallrw.keystore.enc
-          test -n "$STORE_PASSWORD"
-
-          openssl enc -d -aes-256-cbc -pbkdf2 \
-            -in signing/zallrw.keystore.enc \
-            -out zallrw.keystore \
-            -pass env:STORE_PASSWORD
-
-          keytool -list \
-            -keystore zallrw.keystore \
-            -storepass "$STORE_PASSWORD" \
-            -alias zallrw
-
-      - name: Extract original DEX
-        run: |
-          unzip -p original/ZallRW.apk classes2.dex > classes2.dex
-          test -s classes2.dex
-
-      - name: Disassemble DEX
-        run: |
-          java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
-          test -f smali2/z/c41.smali
-
       - name: Update backend and certificate hash
         run: |
           set -e
-
-          OLD_URL="https://pusat-mlbb.vercel.app"
-          NEW_URL="https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
-
-          OLD_HASH="NzXW8cqbFRP2WXcG9sOywgAsFT+AISDgqH5gDne81JY="
-          NEW_HASH="6TrA5WmWqHbMEyJxaXQGvWc9tLfuHhOyiF/cr1E0dUc="
 
           python3 - <<'PY'
           from pathlib import Path
@@ -97,75 +16,30 @@ jobs:
           hash_count = 0
 
           for path in files:
-              text = path.read_text(errors="replace")
-              url_count += text.count(old_url)
-              text = text.replace(old_url, new_url)
+              content = path.read_text(errors="replace")
+
+              url_count += content.count(old_url)
+              content = content.replace(old_url, new_url)
 
               if path.as_posix().endswith("/z/c41.smali"):
-                  hash_count += text.count(old_hash)
-                  text = text.replace(old_hash, new_hash)
+                  hash_count = content.count(old_hash)
+                  if hash_count != 2:
+                      raise SystemExit(
+                          f"Hash lama ditemukan {hash_count} kali, bukan 2."
+                      )
+                  content = content.replace(old_hash, new_hash)
 
-              path.write_text(text)
+              path.write_text(content)
 
           if url_count == 0:
               raise SystemExit("URL lama tidak ditemukan.")
-          if hash_count != 1:
-              raise SystemExit(f"Hash sertifikat ditemukan {hash_count} kali, seharusnya 1.")
 
-          print("Jumlah URL lama diganti:", url_count)
-          print("Hash sertifikat berhasil diperbarui.")
+          check = Path("smali2/z/c41.smali").read_text()
+          if old_hash in check:
+              raise SystemExit("Hash lama masih ditemukan.")
+          if check.count(new_hash) != 2:
+              raise SystemExit("Hash baru tidak ditemukan 2 kali.")
+
+          print("URL lama berhasil diganti:", url_count)
+          print("Hash sertifikat berhasil diganti: 2 kemunculan.")
           PY
-
-          if grep -R "$OLD_URL" smali2; then
-            echo "URL lama masih ditemukan."
-            exit 1
-          fi
-
-          grep -n "$NEW_HASH" smali2/z/c41.smali
-
-      - name: Assemble DEX
-        run: |
-          java -Xmx5g -jar smali.jar assemble smali2 -o classes2-new.dex
-          test -s classes2-new.dex
-
-      - name: Replace DEX in original APK
-        run: |
-          set -e
-          cp original/ZallRW.apk ZallRW-unsigned.apk
-
-          zip -d ZallRW-unsigned.apk classes2.dex
-          zip -d ZallRW-unsigned.apk 'META-INF/*.RSA' 'META-INF/*.DSA' 'META-INF/*.EC' 'META-INF/*.SF' 'META-INF/MANIFEST.MF' || true
-
-          cp classes2-new.dex classes2.dex
-          zip -q ZallRW-unsigned.apk classes2.dex
-
-          unzip -p ZallRW-unsigned.apk classes2.dex > verify.dex
-          cmp classes2.dex verify.dex
-
-      - name: Align APK
-        run: |
-          zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
-          zipalign -c 4 ZallRW-aligned.apk
-
-      - name: Sign APK with permanent key
-        env:
-          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
-        run: |
-          apksigner sign \
-            --ks zallrw.keystore \
-            --ks-key-alias zallrw \
-            --ks-pass env:STORE_PASSWORD \
-            --key-pass env:STORE_PASSWORD \
-            --out ZallRW-PERMANENT.apk \
-            ZallRW-aligned.apk
-
-          apksigner verify --verbose ZallRW-PERMANENT.apk
-
-          rm -f zallrw.keystore
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZallRW-PERMANENT
-          path: ZallRW-PERMANENT.apk
-          if-no-files-found: error
