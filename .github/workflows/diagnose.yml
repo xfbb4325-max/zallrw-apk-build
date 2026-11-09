@@ -1,0 +1,82 @@
+name: Diagnose Zall RW APK
+
+on: [workflow_dispatch]
+
+permissions:
+actions: read
+contents: read
+
+jobs:
+diagnose:
+runs-on: ubuntu-latest
+
+steps:
+  - name: Install tools
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y openjdk-17-jdk unzip curl jq diffutils
+
+  - name: Download original APK
+    uses: actions/download-artifact@v4
+    with:
+      name: ZallRW-original
+      path: original
+      run-id: "42607124854"
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Download patched APK
+    uses: actions/download-artifact@v4
+    with:
+      name: ZallRW-PATCHED
+      path: patched
+      run-id: "42658587420"
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Download Smali
+    run: |
+      API="https://api.github.com/repos/baksmali/smali/releases/latest"
+      RELEASE=$(curl -fsSL "$API")
+      URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
+      test -n "$URL"
+      curl -fL --retry 3 -o baksmali.jar "$URL"
+
+  - name: Extract DEX files
+    run: |
+      unzip -p original/ZallRW.apk classes2.dex > original.dex
+      unzip -p patched/ZallRW-PATCHED.apk classes2.dex > patched.dex
+
+      sha256sum original.dex patched.dex
+      ls -lh original.dex patched.dex
+
+  - name: Disassemble both DEX files
+    run: |
+      java -Xmx5g -jar baksmali.jar disassemble original.dex -o original-smali
+      java -Xmx5g -jar baksmali.jar disassemble patched.dex -o patched-smali
+
+  - name: Search important code
+    run: |
+      {
+        echo "===== ORIGINAL APK ====="
+        grep -RniE 'System;->exit|killProcess|signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original-smali || true
+
+        echo ""
+        echo "===== PATCHED APK ====="
+        grep -RniE 'System;->exit|killProcess|signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' patched-smali || true
+
+        echo ""
+        echo "===== OLD BACKEND URL ====="
+        grep -Rni 'pusat-mlbb.vercel.app' patched-smali || true
+
+        echo ""
+        echo "===== NEW BACKEND URL ====="
+        grep -Rni 'zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app' patched-smali || true
+      } > diagnosis.txt
+
+      cat diagnosis.txt
+
+  - name: Upload diagnosis
+    uses: actions/upload-artifact@v4
+    with:
+      name: ZallRW-DIAGNOSIS
+      path: diagnosis.txt
+      if-no-files-found: error
