@@ -10,7 +10,6 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-latest
-
     steps:
       - name: Download original APK
         uses: actions/download-artifact@v4
@@ -24,17 +23,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk zip unzip curl file apksigner zipalign
-          java -version
 
       - name: Download Smali tools
         run: |
-          curl -fL --retry 3 -o baksmali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar
-          curl -fL --retry 3 -o smali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/smali-3.0.10-fat-release.jar
+          curl -fL -o baksmali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar
+          curl -fL -o smali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/smali-3.0.10-fat-release.jar
           file baksmali.jar smali.jar
+          sha256sum baksmali.jar smali.jar
           java -jar baksmali.jar --help
           java -jar smali.jar --help
 
-      - name: Extract classes2.dex
+      - name: Extract DEX
         run: |
           unzip -p original/ZallRW.apk classes2.dex > classes2.dex
           test -s classes2.dex
@@ -46,55 +45,32 @@ jobs:
       - name: Replace backend
         run: |
           find smali2 -name '*.smali' -type f -exec sed -i 's|https://pusat-mlbb.vercel.app|https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app|g' {} +
-
-          if grep -R 'pusat-mlbb.vercel.app' smali2; then
-            echo "URL lama masih ditemukan"
-            exit 1
-          fi
-
-          echo "URL lama berhasil diganti"
+          ! grep -R 'pusat-mlbb.vercel.app' smali2
 
       - name: Assemble DEX
         run: |
           java -Xmx5g -jar smali.jar assemble smali2 -o classes2-new.dex
           test -s classes2-new.dex
 
-      - name: Replace DEX in original APK
+      - name: Replace DEX
         run: |
           cp original/ZallRW.apk ZallRW-unsigned.apk
           zip -d ZallRW-unsigned.apk classes2.dex
           cp classes2-new.dex classes2.dex
           zip -q ZallRW-unsigned.apk classes2.dex
-
           unzip -p ZallRW-unsigned.apk classes2.dex > verify.dex
           cmp classes2.dex verify.dex
 
       - name: Align APK
-        run: |
-          zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
+        run: zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
 
       - name: Create signing key
         run: |
-          keytool -genkeypair \
-            -keystore zallrw.keystore \
-            -alias zallrw \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android123 \
-            -keypass android123 \
-            -dname "CN=Zall RW, O=Zall RW, C=ID"
+          keytool -genkeypair -keystore zallrw.keystore -alias zallrw -keyalg RSA -keysize 2048 -validity 10000 -storepass android123 -keypass android123 -dname "CN=Zall RW, O=Zall RW, C=ID"
 
       - name: Sign APK
         run: |
-          apksigner sign \
-            --ks zallrw.keystore \
-            --ks-key-alias zallrw \
-            --ks-pass pass:android123 \
-            --key-pass pass:android123 \
-            --out ZallRW-PATCHED.apk \
-            ZallRW-aligned.apk
-
+          apksigner sign --ks zallrw.keystore --ks-key-alias zallrw --ks-pass pass:android123 --key-pass pass:android123 --out ZallRW-PATCHED.apk ZallRW-aligned.apk
           apksigner verify --verbose ZallRW-PATCHED.apk
 
       - name: Upload patched APK
