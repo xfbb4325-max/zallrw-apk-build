@@ -6,11 +6,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Combine source
-        run: cat source.part-{00..18} > source.zip
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Combine source files
+        run: |
+          set -e
+          for i in $(seq -w 0 18); do
+            test -f "source.part-$i"
+          done
+          cat source.part-{00..18} > source.zip
+          unzip -t source.zip
 
       - name: Install Apktool
         run: |
@@ -26,11 +34,15 @@ jobs:
       - name: Build APK
         run: |
           DIR=$(find project -name apktool.yml -printf '%h\n' | head -1)
-          test -n "$DIR"
+          if [ -z "$DIR" ]; then
+            echo "apktool.yml tidak ditemukan!"
+            exit 1
+          fi
           apktool b "$DIR" -o ZallRW-unsigned.apk
 
-      - name: Save APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ZallRW-unsigned
           path: ZallRW-unsigned.apk
+          if-no-files-found: error
