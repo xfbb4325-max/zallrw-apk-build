@@ -42,6 +42,8 @@ jobs:
           echo "URL backend berhasil diganti."
 
       - name: Build APK
+        env:
+          JAVA_TOOL_OPTIONS: "-Xmx5g"
         run: |
           apktool b project -o ZallRW-unsigned.apk
 
