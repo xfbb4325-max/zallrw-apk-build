@@ -1,6 +1,6 @@
 name: Inspect Zall RW APK
 
-'on':
+on:
 workflow_dispatch:
 
 permissions:
