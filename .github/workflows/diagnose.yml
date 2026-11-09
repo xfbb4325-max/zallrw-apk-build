@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download original APK artifact
+      - name: Download original APK
         uses: actions/download-artifact@v4
         with:
           name: ZallRW-original
@@ -19,7 +19,7 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 42607124854
 
-      - name: Download patched APK artifact
+      - name: Download patched APK
         uses: actions/download-artifact@v4
         with:
           name: ZallRW-PATCHED
@@ -39,10 +39,8 @@ jobs:
           API=$(curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest)
           BAK_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^baksmali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
           SMA_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^smali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
-
           test -n "$BAK_URL"
           test -n "$SMA_URL"
-
           curl -fL "$BAK_URL" -o baksmali.jar
           curl -fL "$SMA_URL" -o smali.jar
 
@@ -51,14 +49,11 @@ jobs:
           set -e
           ORIGINAL=$(find original -type f -name '*.apk' | head -n 1)
           PATCHED=$(find patched -type f -name '*.apk' | head -n 1)
-
           test -n "$ORIGINAL"
           test -n "$PATCHED"
-
           mkdir -p original_apk patched_apk
           unzip -q "$ORIGINAL" -d original_apk
           unzip -q "$PATCHED" -d patched_apk
-
           test -f original_apk/classes2.dex
           test -f patched_apk/classes2.dex
 
@@ -66,18 +61,12 @@ jobs:
         run: |
           set -e
           mkdir -p original_smali patched_smali
-
           java -jar baksmali.jar disassemble original_apk/classes2.dex -o original_smali
           java -jar baksmali.jar disassemble patched_apk/classes2.dex -o patched_smali
 
           {
             echo "===== DEX HASH ====="
             sha256sum original_apk/classes2.dex patched_apk/classes2.dex
-
-            echo
-            echo "===== APK FILES ====="
-            find original_apk -maxdepth 1 -type f -printf 'ORIGINAL %f\n' | sort
-            find patched_apk -maxdepth 1 -type f -printf 'PATCHED %f\n' | sort
 
             echo
             echo "===== ORIGINAL BACKEND REFERENCES ====="
@@ -96,7 +85,7 @@ jobs:
             grep -RniE 'signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original_smali patched_smali || true
 
             echo
-            echo "===== DIFFERENCES ====="
+            echo "===== FILE DIFFERENCES ====="
             diff -qr original_smali patched_smali || true
           } > diagnosis.txt
 
