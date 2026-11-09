@@ -1,0 +1,73 @@
+name: Create Permanent ZallRW Signing Key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-key:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create permanent signing key
+        env:
+          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
+        run: |
+          set -e
+
+          if [ -z "$STORE_PASSWORD" ]; then
+            echo "Secret password belum tersedia."
+            exit 1
+          fi
+
+          mkdir -p signing
+
+          if [ -f signing/zallrw.keystore.enc ]; then
+            echo "Kunci permanen sudah ada. Tidak membuat kunci baru."
+            exit 0
+          fi
+
+          keytool -genkeypair \
+            -keystore zallrw.keystore \
+            -alias zallrw \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "$STORE_PASSWORD" \
+            -keypass "$STORE_PASSWORD" \
+            -dname "CN=Zall RW, O=Zall RW, C=ID"
+
+          keytool -exportcert \
+            -keystore zallrw.keystore \
+            -alias zallrw \
+            -storepass "$STORE_PASSWORD" \
+            -file certificate.der
+
+          echo "CERTIFICATE SHA256:"
+          openssl dgst -sha256 -binary certificate.der | base64 -w 0
+          echo
+
+          openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -in zallrw.keystore \
+            -out signing/zallrw.keystore.enc \
+            -pass env:STORE_PASSWORD
+
+          rm -f zallrw.keystore certificate.der
+
+      - name: Save encrypted key
+        run: |
+          if [ -f signing/zallrw.keystore.enc ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add signing/zallrw.keystore.enc
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Save encrypted permanent signing key"
+              git push
+            fi
+          fi
