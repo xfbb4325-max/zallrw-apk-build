@@ -1,82 +1,110 @@
 name: Diagnose Zall RW APK
 
-on: [workflow_dispatch]
+'on':
+  workflow_dispatch:
 
-permissions:
-actions: read
-contents: read
+permissions: read-all
 
 jobs:
-diagnose:
-runs-on: ubuntu-latest
+  diagnose:
+    runs-on: ubuntu-latest
 
-steps:
-  - name: Install tools
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y openjdk-17-jdk unzip curl jq diffutils
+    steps:
+      - name: Download original APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42607124854
 
-  - name: Download original APK
-    uses: actions/download-artifact@v4
-    with:
-      name: ZallRW-original
-      path: original
-      run-id: "42607124854"
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download patched APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-PATCHED
+          path: patched
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42658587420
 
-  - name: Download patched APK
-    uses: actions/download-artifact@v4
-    with:
-      name: ZallRW-PATCHED
-      path: patched
-      run-id: "42658587420"
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk unzip curl jq
 
-  - name: Download Smali
-    run: |
-      API="https://api.github.com/repos/baksmali/smali/releases/latest"
-      RELEASE=$(curl -fsSL "$API")
-      URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
-      test -n "$URL"
-      curl -fL --retry 3 -o baksmali.jar "$URL"
+      - name: Download Smali tools
+        run: |
+          set -e
+          API=$(curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest)
+          BAK_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^baksmali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
+          SMA_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^smali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
 
-  - name: Extract DEX files
-    run: |
-      unzip -p original/ZallRW.apk classes2.dex > original.dex
-      unzip -p patched/ZallRW-PATCHED.apk classes2.dex > patched.dex
+          test -n "$BAK_URL"
+          test -n "$SMA_URL"
 
-      sha256sum original.dex patched.dex
-      ls -lh original.dex patched.dex
+          curl -fL "$BAK_URL" -o baksmali.jar
+          curl -fL "$SMA_URL" -o smali.jar
 
-  - name: Disassemble both DEX files
-    run: |
-      java -Xmx5g -jar baksmali.jar disassemble original.dex -o original-smali
-      java -Xmx5g -jar baksmali.jar disassemble patched.dex -o patched-smali
+      - name: Extract APK files
+        run: |
+          set -e
+          ORIGINAL=$(find original -type f -name '*.apk' | head -n 1)
+          PATCHED=$(find patched -type f -name '*.apk' | head -n 1)
 
-  - name: Search important code
-    run: |
-      {
-        echo "===== ORIGINAL APK ====="
-        grep -RniE 'System;->exit|killProcess|signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original-smali || true
+          test -n "$ORIGINAL"
+          test -n "$PATCHED"
 
-        echo ""
-        echo "===== PATCHED APK ====="
-        grep -RniE 'System;->exit|killProcess|signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' patched-smali || true
+          mkdir -p original_apk patched_apk
+          unzip -q "$ORIGINAL" -d original_apk
+          unzip -q "$PATCHED" -d patched_apk
 
-        echo ""
-        echo "===== OLD BACKEND URL ====="
-        grep -Rni 'pusat-mlbb.vercel.app' patched-smali || true
+          test -f original_apk/classes2.dex
+          test -f patched_apk/classes2.dex
 
-        echo ""
-        echo "===== NEW BACKEND URL ====="
-        grep -Rni 'zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app' patched-smali || true
-      } > diagnosis.txt
+      - name: Compare DEX files
+        run: |
+          set -e
+          mkdir -p original_smali patched_smali
 
-      cat diagnosis.txt
+          java -jar baksmali.jar disassemble original_apk/classes2.dex -o original_smali
+          java -jar baksmali.jar disassemble patched_apk/classes2.dex -o patched_smali
 
-  - name: Upload diagnosis
-    uses: actions/upload-artifact@v4
-    with:
-      name: ZallRW-DIAGNOSIS
-      path: diagnosis.txt
-      if-no-files-found: error
+          {
+            echo "===== DEX HASH ====="
+            sha256sum original_apk/classes2.dex patched_apk/classes2.dex
+
+            echo
+            echo "===== APK FILES ====="
+            find original_apk -maxdepth 1 -type f -printf 'ORIGINAL %f\n' | sort
+            find patched_apk -maxdepth 1 -type f -printf 'PATCHED %f\n' | sort
+
+            echo
+            echo "===== ORIGINAL BACKEND REFERENCES ====="
+            grep -RniE 'pusat-mlbb|zallrw-vip-backend' original_smali || true
+
+            echo
+            echo "===== PATCHED BACKEND REFERENCES ====="
+            grep -RniE 'pusat-mlbb|zallrw-vip-backend' patched_smali || true
+
+            echo
+            echo "===== EXIT / PROCESS KILL REFERENCES ====="
+            grep -RniE 'System;->exit|killProcess|Process;->exit' original_smali patched_smali || true
+
+            echo
+            echo "===== SIGNATURE CHECK REFERENCES ====="
+            grep -RniE 'signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original_smali patched_smali || true
+
+            echo
+            echo "===== DIFFERENCES ====="
+            diff -qr original_smali patched_smali || true
+          } > diagnosis.txt
+
+          cat diagnosis.txt
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-DIAGNOSIS
+          path: diagnosis.txt
+          if-no-files-found: error
