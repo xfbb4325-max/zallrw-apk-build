@@ -1,9 +1,6 @@
 name: Diagnose Zall RW APK
 
-'on':
-  workflow_dispatch:
-
-permissions: read-all
+on: workflow_dispatch
 
 jobs:
   diagnose:
@@ -33,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk unzip curl jq
 
-      - name: Download Smali tools
+      - name: Download Smali
         run: |
           set -e
           API=$(curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest)
@@ -44,48 +41,36 @@ jobs:
           curl -fL "$BAK_URL" -o baksmali.jar
           curl -fL "$SMA_URL" -o smali.jar
 
-      - name: Extract APK files
+      - name: Extract APK
         run: |
           set -e
-          ORIGINAL=$(find original -type f -name '*.apk' | head -n 1)
-          PATCHED=$(find patched -type f -name '*.apk' | head -n 1)
+          ORIGINAL=$(find original -name '*.apk' | head -n 1)
+          PATCHED=$(find patched -name '*.apk' | head -n 1)
           test -n "$ORIGINAL"
           test -n "$PATCHED"
-          mkdir -p original_apk patched_apk
+          mkdir original_apk patched_apk
           unzip -q "$ORIGINAL" -d original_apk
           unzip -q "$PATCHED" -d patched_apk
-          test -f original_apk/classes2.dex
-          test -f patched_apk/classes2.dex
 
-      - name: Compare DEX files
+      - name: Diagnose
         run: |
           set -e
-          mkdir -p original_smali patched_smali
+          mkdir original_smali patched_smali
           java -jar baksmali.jar disassemble original_apk/classes2.dex -o original_smali
           java -jar baksmali.jar disassemble patched_apk/classes2.dex -o patched_smali
 
           {
             echo "===== DEX HASH ====="
             sha256sum original_apk/classes2.dex patched_apk/classes2.dex
-
-            echo
-            echo "===== ORIGINAL BACKEND REFERENCES ====="
+            echo "===== ORIGINAL URL ====="
             grep -RniE 'pusat-mlbb|zallrw-vip-backend' original_smali || true
-
-            echo
-            echo "===== PATCHED BACKEND REFERENCES ====="
+            echo "===== PATCHED URL ====="
             grep -RniE 'pusat-mlbb|zallrw-vip-backend' patched_smali || true
-
-            echo
-            echo "===== EXIT / PROCESS KILL REFERENCES ====="
+            echo "===== EXIT REFERENCES ====="
             grep -RniE 'System;->exit|killProcess|Process;->exit' original_smali patched_smali || true
-
-            echo
-            echo "===== SIGNATURE CHECK REFERENCES ====="
+            echo "===== SIGNATURE REFERENCES ====="
             grep -RniE 'signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original_smali patched_smali || true
-
-            echo
-            echo "===== FILE DIFFERENCES ====="
+            echo "===== DIFFERENCES ====="
             diff -qr original_smali patched_smali || true
           } > diagnosis.txt
 
