@@ -1,22 +1,11 @@
-name: Test MediaFire Download
+name: Test MediaFire
 
-'on':
-workflow_dispatch:
+on:
+  workflow_dispatch:
 
 jobs:
-download:
-runs-on: ubuntu-latest
-steps:
-- name: Test MediaFire
-run: |
-python - <<'PY'
-import requests
-from bs4 import BeautifulSoup
-
-      url = "https://www.mediafire.com/file/0o7ec6br9f60wi7/Zall+RW.apk/file"
-      r = requests.get(url, timeout=60)
-      print("HTTP:", r.status_code)
-      print("Final URL:", r.url)
-      print("Page title:", BeautifulSoup(r.text, "html.parser").title)
-      print("APK link ditemukan:", "download" in r.text.lower())
-      PY
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check MediaFire
+        run: python -c "import requests; u='https://www.mediafire.com/file/0o7ec6br9f60wi7/Zall+RW.apk/file'; r=requests.get(u,timeout=60); print('HTTP:',r.status_code); print('URL:',r.url); print('Title:',r.text[:500])"
