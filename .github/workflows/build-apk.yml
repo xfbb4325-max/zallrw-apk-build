@@ -20,14 +20,22 @@ jobs:
           run-id: "42607124854"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install tools
+      - name: Install Java and tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool apksigner
+          sudo apt-get install -y openjdk-17-jdk apksigner curl
+          java -version
+
+      - name: Install Apktool 3.0.3
+        run: |
+          curl -L -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar
+          java -jar apktool.jar --version
 
       - name: Decode APK
+        env:
+          JAVA_TOOL_OPTIONS: "-Xmx5g"
         run: |
-          apktool d original/ZallRW.apk -o project -f
+          java -jar apktool.jar d original/ZallRW.apk -o project -f
 
       - name: Replace backend URLs
         run: |
@@ -36,39 +44,23 @@ jobs:
       - name: Verify replacement
         run: |
           if grep -R 'pusat-mlbb.vercel.app' project --include='*.smali'; then
-            echo "Masih ditemukan URL lama!"
             exit 1
           fi
-          echo "URL backend berhasil diganti."
+          echo "Backend URL berhasil diganti"
 
       - name: Build APK
         env:
           JAVA_TOOL_OPTIONS: "-Xmx5g"
         run: |
-          apktool b project -o ZallRW-unsigned.apk
+          java -jar apktool.jar b project -o ZallRW-unsigned.apk
 
       - name: Create signing key
         run: |
-          keytool -genkeypair -v \
-            -keystore zallrw.keystore \
-            -alias zallrw \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android123 \
-            -keypass android123 \
-            -dname "CN=Zall RW, OU=App, O=Zall RW, L=Indonesia, ST=Central Java, C=ID"
+          keytool -genkeypair -keystore zallrw.keystore -alias zallrw -keyalg RSA -keysize 2048 -validity 10000 -storepass android123 -keypass android123 -dname "CN=Zall RW, O=Zall RW, C=ID"
 
       - name: Sign APK
         run: |
-          apksigner sign \
-            --ks zallrw.keystore \
-            --ks-key-alias zallrw \
-            --ks-pass pass:android123 \
-            --key-pass pass:android123 \
-            --out ZallRW-VIP.apk \
-            ZallRW-unsigned.apk
-
+          apksigner sign --ks zallrw.keystore --ks-key-alias zallrw --ks-pass pass:android123 --key-pass pass:android123 --out ZallRW-VIP.apk ZallRW-unsigned.apk
           apksigner verify ZallRW-VIP.apk
 
       - name: Upload finished APK
