@@ -1,0 +1,96 @@
+name: Diagnose Zall RW APK V2
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download original APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42607124854
+
+      - name: Download patched APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-PATCHED
+          path: patched
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42658587420
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk unzip curl jq
+
+      - name: Download Smali tools
+        run: |
+          set -e
+          API=$(curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest)
+          BAK_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^baksmali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
+          SMA_URL=$(echo "$API" | jq -r '.assets[] | select(.name | test("^smali-.*-fat-release\\.jar$")) | .browser_download_url' | head -n 1)
+          test -n "$BAK_URL"
+          test -n "$SMA_URL"
+          curl -fL "$BAK_URL" -o baksmali.jar
+          curl -fL "$SMA_URL" -o smali.jar
+
+      - name: Extract APK files
+        run: |
+          set -e
+          ORIGINAL=$(find original -type f -name '*.apk' | head -n 1)
+          PATCHED=$(find patched -type f -name '*.apk' | head -n 1)
+          test -n "$ORIGINAL"
+          test -n "$PATCHED"
+          mkdir original_apk patched_apk
+          unzip -q "$ORIGINAL" -d original_apk
+          unzip -q "$PATCHED" -d patched_apk
+          test -f original_apk/classes2.dex
+          test -f patched_apk/classes2.dex
+
+      - name: Diagnose APK
+        run: |
+          set -e
+          mkdir original_smali patched_smali
+          java -jar baksmali.jar disassemble original_apk/classes2.dex -o original_smali
+          java -jar baksmali.jar disassemble patched_apk/classes2.dex -o patched_smali
+
+          {
+            echo "===== DEX HASH ====="
+            sha256sum original_apk/classes2.dex patched_apk/classes2.dex
+
+            echo "===== ORIGINAL URL ====="
+            grep -RniE 'pusat-mlbb|zallrw-vip-backend' original_smali || true
+
+            echo "===== PATCHED URL ====="
+            grep -RniE 'pusat-mlbb|zallrw-vip-backend' patched_smali || true
+
+            echo "===== EXIT REFERENCES ====="
+            grep -RniE 'System;->exit|killProcess|Process;->exit' original_smali patched_smali || true
+
+            echo "===== SIGNATURE REFERENCES ====="
+            grep -RniE 'signingInfo|getPackageInfo|GET_SIGNATURES|MessageDigest|X509Certificate|Signature;' original_smali patched_smali || true
+
+            echo "===== DIFFERENCES ====="
+            diff -qr original_smali patched_smali || true
+          } > diagnosis.txt
+
+          cat diagnosis.txt
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-DIAGNOSIS
+          path: diagnosis.txt
+          if-no-files-found: error
