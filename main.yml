@@ -1,0 +1,37 @@
+name: Check Zall RW Source
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Combine source parts
+        run: |
+          count=$(find . -type f -name 'source.part-*' | wc -l)
+          echo "Jumlah file: $count"
+          if [ "$count" -ne 19 ]; then
+            echo "File source tidak lengkap!"
+            exit 1
+          fi
+          cat source.part-{00..18} > source.zip
+          unzip -t source.zip
+
+      - name: Check APKTool project
+        run: |
+          unzip -l source.zip > contents.txt
+          if grep -qi 'apktool.yml' contents.txt; then
+            echo "apktool.yml ditemukan"
+          else
+            echo "apktool.yml TIDAK ditemukan"
+            exit 1
+          fi
+          if grep -qi 'AndroidManifest.xml' contents.txt; then
+            echo "AndroidManifest.xml ditemukan"
+          else
+            echo "AndroidManifest.xml TIDAK ditemukan"
+            exit 1
+          fi
