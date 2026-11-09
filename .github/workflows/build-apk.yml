@@ -1,80 +1,133 @@
 name: Patch Zall RW APK
 
 'on':
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
-  actions: read
-  contents: read
+actions: read
+contents: read
 
 jobs:
-  patch:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download original APK
-        uses: actions/download-artifact@v4
-        with:
-          name: ZallRW-original
-          path: original
-          run-id: "42607124854"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+patch:
+runs-on: ubuntu-latest
 
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk zip unzip curl file apksigner zipalign
+steps:
+  - name: Download original APK
+    uses: actions/download-artifact@v4
+    with:
+      name: ZallRW-original
+      path: original
+      run-id: "42607124854"
+      github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Smali tools
-        run: |
-          curl -fL -o baksmali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar
-          curl -fL -o smali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/smali-3.0.10-fat-release.jar
-          file baksmali.jar smali.jar
-          sha256sum baksmali.jar smali.jar
-          java -jar baksmali.jar --help
-          java -jar smali.jar --help
+  - name: Install tools
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y openjdk-17-jdk zip unzip curl file jq apksigner zipalign
 
-      - name: Extract DEX
-        run: |
-          unzip -p original/ZallRW.apk classes2.dex > classes2.dex
-          test -s classes2.dex
+  - name: Download Smali tools
+    run: |
+      API="https://api.github.com/repos/baksmali/smali/releases/latest"
 
-      - name: Disassemble DEX
-        run: |
-          java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
+      RELEASE=$(curl -fsSL "$API")
 
-      - name: Replace backend
-        run: |
-          find smali2 -name '*.smali' -type f -exec sed -i 's|https://pusat-mlbb.vercel.app|https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app|g' {} +
-          ! grep -R 'pusat-mlbb.vercel.app' smali2
+      BAKSMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
+      SMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
 
-      - name: Assemble DEX
-        run: |
-          java -Xmx5g -jar smali.jar assemble smali2 -o classes2-new.dex
-          test -s classes2-new.dex
+      if [ -z "$BAKSMALI_URL" ] || [ -z "$SMALI_URL" ]; then
+        echo "File Smali tidak ditemukan pada rilis terbaru."
+        echo "$RELEASE" | jq -r '.tag_name, (.assets[].name)'
+        exit 1
+      fi
 
-      - name: Replace DEX
-        run: |
-          cp original/ZallRW.apk ZallRW-unsigned.apk
-          zip -d ZallRW-unsigned.apk classes2.dex
-          cp classes2-new.dex classes2.dex
-          zip -q ZallRW-unsigned.apk classes2.dex
-          unzip -p ZallRW-unsigned.apk classes2.dex > verify.dex
-          cmp classes2.dex verify.dex
+      curl -fL --retry 3 -o baksmali.jar "$BAKSMALI_URL"
+      curl -fL --retry 3 -o smali.jar "$SMALI_URL"
 
-      - name: Align APK
-        run: zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
+      echo "Memeriksa checksum..."
+      echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
+      echo "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  smali.jar" | sha256sum -c -
 
-      - name: Create signing key
-        run: |
-          keytool -genkeypair -keystore zallrw.keystore -alias zallrw -keyalg RSA -keysize 2048 -validity 10000 -storepass android123 -keypass android123 -dname "CN=Zall RW, O=Zall RW, C=ID"
+      java -jar baksmali.jar --help
+      java -jar smali.jar --help
 
-      - name: Sign APK
-        run: |
-          apksigner sign --ks zallrw.keystore --ks-key-alias zallrw --ks-pass pass:android123 --key-pass pass:android123 --out ZallRW-PATCHED.apk ZallRW-aligned.apk
-          apksigner verify --verbose ZallRW-PATCHED.apk
+  - name: Extract classes2.dex
+    run: |
+      unzip -p original/ZallRW.apk classes2.dex > classes2.dex
+      test -s classes2.dex
+      ls -lh classes2.dex
 
-      - name: Upload patched APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZallRW-PATCHED
-          path: ZallRW-PATCHED.apk
+  - name: Disassemble DEX
+    run: |
+      java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
+      test -d smali2
+
+  - name: Replace backend URL
+    run: |
+      OLD="https://pusat-mlbb.vercel.app"
+      NEW="https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
+
+      find smali2 -type f -name '*.smali' -exec sed -i "s|$OLD|$NEW|g" {} +
+
+      if grep -R "$OLD" smali2; then
+        echo "Masih ditemukan URL backend lama."
+        exit 1
+      fi
+
+      echo "URL backend lama berhasil diganti."
+
+  - name: Assemble DEX
+    run: |
+      java -Xmx5g -jar smali.jar assemble smali2 -o classes2-new.dex
+      test -s classes2-new.dex
+      ls -lh classes2-new.dex
+
+  - name: Replace DEX in original APK
+    run: |
+      cp original/ZallRW.apk ZallRW-unsigned.apk
+
+      zip -d ZallRW-unsigned.apk classes2.dex
+
+      cp classes2-new.dex classes2.dex
+      zip -q ZallRW-unsigned.apk classes2.dex
+
+      unzip -p ZallRW-unsigned.apk classes2.dex > verify.dex
+      cmp classes2.dex verify.dex
+
+      echo "classes2.dex berhasil diganti."
+
+  - name: Align APK
+    run: |
+      zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
+      zipalign -c 4 ZallRW-aligned.apk
+
+  - name: Create signing key
+    run: |
+      keytool -genkeypair \
+        -keystore zallrw.keystore \
+        -alias zallrw \
+        -keyalg RSA \
+        -keysize 2048 \
+        -validity 10000 \
+        -storepass android123 \
+        -keypass android123 \
+        -dname "CN=Zall RW, O=Zall RW, C=ID"
+
+  - name: Sign APK
+    run: |
+      apksigner sign \
+        --ks zallrw.keystore \
+        --ks-key-alias zallrw \
+        --ks-pass pass:android123 \
+        --key-pass pass:android123 \
+        --out ZallRW-PATCHED.apk \
+        ZallRW-aligned.apk
+
+      apksigner verify --verbose ZallRW-PATCHED.apk
+      ls -lh ZallRW-PATCHED.apk
+
+  - name: Upload patched APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: ZallRW-PATCHED
+      path: ZallRW-PATCHED.apk
+      if-no-files-found: error
