@@ -1,4 +1,4 @@
-name: Download Zall RW APK
+name: Test MediaFire Download
 
 'on':
 workflow_dispatch:
@@ -7,14 +7,16 @@ jobs:
 download:
 runs-on: ubuntu-latest
 steps:
-- name: Download APK
+- name: Test MediaFire
 run: |
-pip install gdown
-gdown --fuzzy "https://drive.google.com/file/d/1lnhexImqC_QN4pobsE2idUYlszTsPQQu/view" -O ZallRW.apk
-test -s ZallRW.apk
+python - <<'PY'
+import requests
+from bs4 import BeautifulSoup
 
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: ZallRW-original
-      path: ZallRW.apk
+      url = "https://www.mediafire.com/file/0o7ec6br9f60wi7/Zall+RW.apk/file"
+      r = requests.get(url, timeout=60)
+      print("HTTP:", r.status_code)
+      print("Final URL:", r.url)
+      print("Page title:", BeautifulSoup(r.text, "html.parser").title)
+      print("APK link ditemukan:", "download" in r.text.lower())
+      PY
