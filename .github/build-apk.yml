@@ -1,0 +1,36 @@
+name: Build Zall RW APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Combine source
+        run: cat source.part-{00..18} > source.zip
+
+      - name: Install Apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Extract source
+        run: |
+          mkdir project
+          unzip source.zip -d project
+          find project -name apktool.yml
+
+      - name: Build APK
+        run: |
+          DIR=$(find project -name apktool.yml -printf '%h\n' | head -1)
+          test -n "$DIR"
+          apktool b "$DIR" -o ZallRW-unsigned.apk
+
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-unsigned
+          path: ZallRW-unsigned.apk
