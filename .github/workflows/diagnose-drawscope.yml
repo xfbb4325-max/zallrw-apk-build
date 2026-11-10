@@ -1,5 +1,5 @@
 
-name: Diagnose DrawScope
+name: Diagnose DrawScope All DEX
 
 on:
   workflow_dispatch:
@@ -10,106 +10,113 @@ permissions:
 
 jobs:
   diagnose:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+
     steps:
+      - name: Download Original APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42607124854
+
+      - name: Download Crashed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-PERMANENT
+          path: rebuilt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 42722290672
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Original APK
-        uses: actions/download-artifact@v5
-        with:
-          name: ZallRW-original
-          path: original
-          run-id: "42607124854"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download Smali Tools
+      - name: Download Baksmali
         run: |
-          set -e
-          curl -fL -o baksmali.jar \
-            https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
-          curl -fL -o smali.jar \
-            https://github.com/baksmali/smali/releases/download/3.0.10/smali-3.0.10-fat-release.jar
+          curl -L -o baksmali.jar \
+          https://repo1.maven.org/maven2/org/smali/baksmali/3.0.10/baksmali-3.0.10.jar
 
-          echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
-          echo "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  smali.jar" | sha256sum -c -
-
-      - name: Compare DEX
+      - name: Analyze All DEX
+        shell: bash
         run: |
           set -e
 
-          mkdir -p dex
+          mkdir -p decoded/original decoded/rebuilt
 
-          unzip -j original/ZallRW.apk 'classes*.dex' -d dex
+          find original -name '*.apk' -print
+          find rebuilt -name '*.apk' -print
 
-          java -Xmx5g -jar baksmali.jar disassemble dex/classes.dex -o original1
-          java -Xmx5g -jar baksmali.jar disassemble dex/classes2.dex -o original2
+          ORIG=$(find original -name '*.apk' | head -n 1)
+          NEW=$(find rebuilt -name '*.apk' | head -n 1)
 
-          java -Xmx5g -jar smali.jar assemble original2 -o rebuilt.dex
-          java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o rebuilt
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          target = "Landroidx/compose/ui/graphics/drawscope/DrawScope;"
-
-          roots = {
-              "DEX ASLI classes.dex": Path("original1"),
-              "DEX ASLI classes2.dex": Path("original2"),
-              "DEX HASIL REBUILD": Path("rebuilt")
-          }
-
-          results = {}
-
-          for name, root in roots.items():
-              lines = set()
-              for file in root.rglob("*.smali"):
-                  for line in file.read_text(errors="replace").splitlines():
-                      if target in line:
-                          lines.add(line.strip())
-              results[name] = lines
-
-          summary = []
-          summary.append("# Hasil Diagnosis DrawScope\n")
-
-          for name, lines in results.items():
-              summary.append(f"## {name}")
-              summary.append(f"Jumlah referensi unik: **{len(lines)}**\n")
-
-          original = results["DEX ASLI classes2.dex"]
-          rebuilt = results["DEX HASIL REBUILD"]
-
-          summary.append("## Perbandingan")
-          summary.append(f"- Referensi hanya di DEX asli: **{len(original - rebuilt)}**")
-          summary.append(f"- Referensi hanya di hasil rebuild: **{len(rebuilt - original)}**")
-
-          summary.append("\n## Contoh perbedaan")
-          for line in sorted(original - rebuilt)[:10]:
-              summary.append(f"- Hanya asli: `{line}`")
-          for line in sorted(rebuilt - original)[:10]:
-              summary.append(f"- Hanya rebuild: `{line}`")
-
-          declaration = ".class public interface abstract Landroidx/compose/ui/graphics/drawscope/DrawScope;"
-
-          for name, root in roots.items():
-              found = any(
-                  declaration in file.read_text(errors="replace")
-                  for file in root.rglob("DrawScope.smali")
-              )
-              summary.append(f"\n- {name}: deklarasi interface ditemukan = **{found}**")
-
-          Path("summary.md").write_text("\n".join(summary))
-          print("\n".join(summary))
-          PY
-
-      - name: Publish Summary
-        if: always()
-        run: |
-          if [ -f summary.md ]; then
-            cat summary.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Diagnosis gagal. Periksa log langkah sebelumnya." >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$ORIG" ] || [ -z "$NEW" ]; then
+            echo "APK NOT FOUND" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+
+          mkdir -p apk/original apk/rebuilt
+          unzip -oq "$ORIG" -d apk/original
+          unzip -oq "$NEW" -d apk/rebuilt
+
+          for TYPE in original rebuilt; do
+            for DEX in apk/$TYPE/classes*.dex; do
+              [ -f "$DEX" ] || continue
+              NAME=$(basename "$DEX" .dex)
+              java -jar baksmali.jar disassemble "$DEX" \
+                -o "decoded/$TYPE/$NAME"
+            done
+          done
+
+          {
+            echo "# DrawScope Diagnosis - All DEX"
+            echo
+            echo "## APK files"
+            echo "Original: $ORIG"
+            echo "Rebuilt: $NEW"
+            echo
+            echo "## DEX files"
+            find apk/original apk/rebuilt -name '*.dex' | sort
+            echo
+            echo "## BackgroundNode locations"
+            find decoded -name 'BackgroundNode.smali'
+            echo
+            echo "## DrawScope declaration"
+            grep -R -n -E '^\.class .*DrawScope' decoded || true
+            echo
+            echo "## DrawScope drawRect call sites"
+            grep -R -n -C 5 'DrawScope;->drawRect' decoded || true
+            echo
+            echo "## BackgroundNode drawRect instructions"
+            find decoded -name 'BackgroundNode.smali' \
+              -exec grep -n -C 8 'drawRect' {} \; || true
+            echo
+            echo "## BackgroundNode draw methods"
+            find decoded -name 'BackgroundNode.smali' \
+              -exec grep -n -E '^[[:space:]]*\.method.* (draw|drawRect)' {} \; || true
+            echo
+            echo "## Changed DrawScope-related classes"
+            for F in \
+              androidx/compose/foundation/BackgroundNode.smali \
+              androidx/compose/ui/graphics/drawscope/DrawScope.smali \
+              androidx/compose/ui/layout/SubcomposeLayoutKt.smali \
+              androidx/compose/ui/node/LayoutNodeKt.smali \
+              androidx/compose/ui/text/AndroidTextStyle_androidKt.smali
+            do
+              echo
+              echo "### $F"
+              for TYPE in original rebuilt; do
+                echo "[$TYPE]"
+                find "decoded/$TYPE" -path "*/$F" -print
+              done
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Finish
+        run: echo "Diagnosis completed."
+        
