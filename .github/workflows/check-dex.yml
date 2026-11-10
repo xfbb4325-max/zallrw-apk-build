@@ -34,11 +34,11 @@ jobs:
 
           curl -fL --retry 3 \
             -o baksmali.jar \
-            https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar
+            https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
 
           curl -fL --retry 3 \
             -o smali.jar \
-            https://github.com/baksmali/smali/releases/download/v3.0.10/smali-3.0.10-fat-release.jar
+            https://github.com/baksmali/smali/releases/download/3.0.10/smali-3.0.10-fat-release.jar
 
           echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
 
@@ -54,7 +54,6 @@ jobs:
 
           for dex in original_dex/classes*.dex; do
             name=$(basename "$dex" .dex)
-
             java -Xmx5g -jar baksmali.jar disassemble "$dex" -o "smali-$name"
           done
 
@@ -114,3 +113,4 @@ jobs:
           name: ZallRW-DRAWSCOPE-REFERENCES
           path: report/
           if-no-files-found: warn
+          
