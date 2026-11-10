@@ -1,0 +1,182 @@
+
+name: Compare Original and Crashed APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Original APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          run-id: "42607124854"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Crashed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-PERMANENT
+          path: crashed
+          run-id: "42722290672"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Smali
+        run: |
+          set -e
+
+          curl -fL -o baksmali.jar \
+            https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
+
+          echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
+
+      - name: Extract and Disassemble
+        run: |
+          set -e
+
+          ORIG=$(find original -type f -iname '*.apk' | head -n 1)
+          NEW=$(find crashed -type f -iname '*.apk' | head -n 1)
+
+          test -n "$ORIG"
+          test -n "$NEW"
+
+          echo "APK asli: $ORIG"
+          echo "APK rebuild: $NEW"
+
+          mkdir -p dex/original dex/crashed
+
+          unzip -p "$ORIG" classes2.dex > dex/original/classes2.dex
+          unzip -p "$NEW" classes2.dex > dex/crashed/classes2.dex
+
+          sha256sum dex/original/classes2.dex dex/crashed/classes2.dex
+
+          java -Xmx5g -jar baksmali.jar disassemble \
+            dex/original/classes2.dex -o smali-original
+
+          java -Xmx5g -jar baksmali.jar disassemble \
+            dex/crashed/classes2.dex -o smali-crashed
+
+      - name: Compare Compose Classes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import difflib
+
+          old = Path("smali-original")
+          new = Path("smali-crashed")
+
+          summary = []
+
+          def add(s):
+              summary.append(s)
+
+          def files(root):
+              return {
+                  str(p.relative_to(root)): p
+                  for p in root.rglob("*.smali")
+                  if "androidx/compose/" in str(p)
+              }
+
+          a = files(old)
+          b = files(new)
+
+          common = set(a) & set(b)
+          changed = [p for p in sorted(common)
+                     if a[p].read_bytes() != b[p].read_bytes()]
+          added = sorted(set(b) - set(a))
+          removed = sorted(set(a) - set(b))
+
+          add("# HASIL PERBANDINGAN APK")
+          add("")
+          add(f"- Class Compose asli: {len(a)}")
+          add(f"- Class Compose rebuild: {len(b)}")
+          add(f"- Class berubah: {len(changed)}")
+          add(f"- Class tambahan: {len(added)}")
+          add(f"- Class hilang: {len(removed)}")
+          add("")
+
+          for name in [
+              "androidx/compose/ui/graphics/drawscope/DrawScope.smali",
+              "androidx/compose/foundation/BackgroundNode.smali"
+          ]:
+              add(f"## {name}")
+
+              if name not in a or name not in b:
+                  add("Class tidak ditemukan di salah satu DEX.")
+                  continue
+
+              diff = list(difflib.unified_diff(
+                  a[name].read_text(errors="replace").splitlines(),
+                  b[name].read_text(errors="replace").splitlines(),
+                  fromfile="ASLI",
+                  tofile="REBUILD",
+                  lineterm=""
+              ))
+
+              add("```diff")
+              add("\n".join(diff[:100]) if diff else "Tidak ada perbedaan.")
+              add("```")
+              add("")
+
+          add("## DAFTAR CLASS COMPOSE BERUBAH")
+          for p in changed[:40]:
+              add(f"- `{p}`")
+
+          add("")
+          add("## INSTRUKSI drawRect")
+          
+          for label, root in [
+              ("ASLI", old),
+              ("REBUILD", new)
+          ]:
+              add(f"### {label}")
+
+              count = 0
+              for p in root.rglob("*.smali"):
+                  if p.name not in ("DrawScope.smali", "BackgroundNode.smali"):
+                      continue
+
+                  lines = p.read_text(errors="replace").splitlines()
+
+                  for i, line in enumerate(lines):
+                      if "drawRect" in line:
+                          add(f"`{p}:{i+1}`")
+                          for context in lines[max(0,i-3):i+4]:
+                              add(f"    {context.strip()}")
+                          count += 1
+                          if count >= 8:
+                              break
+                  if count >= 8:
+                      break
+
+              if count == 0:
+                  add("Tidak ditemukan.")
+
+          Path("result.md").write_text("\n".join(summary))
+          print("\n".join(summary))
+          PY
+
+      - name: Publish Results
+        if: always()
+        run: |
+          if [ -f result.md ]; then
+            cat result.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pemeriksaan gagal. Lihat log langkah sebelumnya." >> "$GITHUB_STEP_SUMMARY"
+          fi
