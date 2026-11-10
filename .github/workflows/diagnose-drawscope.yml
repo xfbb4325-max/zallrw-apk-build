@@ -37,21 +37,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download and Verify Baksmali
+      - name: Install Maven and Baksmali
         run: |
-          curl -fL --retry 3 \
-            https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar \
-            -o baksmali.jar
-          test -s baksmali.jar
-          java -jar baksmali.jar --version
+          sudo apt-get update
+          sudo apt-get install -y maven
+          mkdir -p lib
+          cat > pom.xml <<'EOF'
+          <project xmlns="http://maven.apache.org/POM/4.0.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>diagnose</groupId>
+            <artifactId>drawscope</artifactId>
+            <version>1.0</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.smali</groupId>
+                <artifactId>baksmali</artifactId>
+                <version>2.5.2</version>
+              </dependency>
+            </dependencies>
+          </project>
+          EOF
+          mvn -q dependency:copy-dependencies \
+            -DoutputDirectory=lib
+          java -cp "lib/*" org.jf.baksmali.Main --version
 
       - name: Analyze All DEX
         shell: bash
         run: |
           set -e
 
-          mkdir -p decoded/original decoded/rebuilt
           mkdir -p apk/original apk/rebuilt
+          mkdir -p decoded/original decoded/rebuilt
 
           ORIG=$(find original -name '*.apk' | head -n 1)
           NEW=$(find rebuilt -name '*.apk' | head -n 1)
@@ -68,8 +86,8 @@ jobs:
             for DEX in apk/$TYPE/classes*.dex; do
               [ -f "$DEX" ] || continue
               NAME=$(basename "$DEX" .dex)
-              java -jar baksmali.jar disassemble "$DEX" \
-                -o "decoded/$TYPE/$NAME"
+              java -cp "lib/*" org.jf.baksmali.Main disassemble \
+                "$DEX" -o "decoded/$TYPE/$NAME"
             done
           done
 
@@ -99,22 +117,6 @@ jobs:
             echo "## BackgroundNode draw methods"
             find decoded -name 'BackgroundNode.smali' \
               -exec grep -n -E '^[[:space:]]*\.method.* (draw|drawRect)' {} \; || true
-            echo
-            echo "## Changed Compose classes"
-            for F in \
-              androidx/compose/foundation/BackgroundNode.smali \
-              androidx/compose/ui/graphics/drawscope/DrawScope.smali \
-              androidx/compose/ui/layout/SubcomposeLayoutKt.smali \
-              androidx/compose/ui/node/LayoutNodeKt.smali \
-              androidx/compose/ui/text/AndroidTextStyle_androidKt.smali
-            do
-              echo
-              echo "### $F"
-              for TYPE in original rebuilt; do
-                echo "[$TYPE]"
-                find "decoded/$TYPE" -path "*/$F" -print
-              done
-            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Finish
