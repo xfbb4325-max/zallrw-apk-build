@@ -31,17 +31,13 @@ jobs:
       - name: Download Smali tools
         run: |
           set -e
-          API="https://api.github.com/repos/baksmali/smali/releases/latest"
-          RELEASE=$(curl -fsSL "$API")
+          curl -fL --retry 3 \
+            -o baksmali.jar \
+            https://repo1.maven.org/maven2/com/bertramlabs/plugins/baksmali/3.0.10/baksmali-3.0.10.jar
 
-          B=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
-          S=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
-
-          test -n "$B"
-          test -n "$S"
-
-          curl -fL --retry 3 -o baksmali.jar "$B"
-          curl -fL --retry 3 -o smali.jar "$S"
+          curl -fL --retry 3 \
+            -o smali.jar \
+            https://repo1.maven.org/maven2/com/bertramlabs/plugins/smali/3.0.10/smali-3.0.10.jar
 
       - name: Extract and disassemble
         run: |
@@ -58,7 +54,7 @@ jobs:
           java -Xmx5g -jar smali.jar assemble smali-classes2 -o rebuilt.dex
           java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o smali-rebuilt
 
-      - name: Scan all DrawScope references
+      - name: Scan DrawScope references
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -83,16 +79,10 @@ jobs:
                   count = 0
                   for file in root.rglob("*.smali"):
                       lines = file.read_text(errors="replace").splitlines()
-                      matches = [
-                          (i, line.strip())
-                          for i, line in enumerate(lines, 1)
-                          if target in line
-                      ]
-
-                      if matches:
-                          for number, line in matches:
+                      for number, line in enumerate(lines, 1):
+                          if target in line:
                               report.write(
-                                  f"{file}:{number}: {line}\n"
+                                  f"{file}:{number}: {line.strip()}\n"
                               )
                               count += 1
 
@@ -101,10 +91,11 @@ jobs:
           print(out.read_text())
           PY
 
-      - name: Upload scan report
+      - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ZallRW-DRAWSCOPE-REFERENCES
           path: report/
           if-no-files-found: warn
+          
