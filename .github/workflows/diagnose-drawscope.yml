@@ -1,0 +1,115 @@
+
+name: Diagnose DrawScope
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Original APK
+        uses: actions/download-artifact@v5
+        with:
+          name: ZallRW-original
+          path: original
+          run-id: "42607124854"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Smali Tools
+        run: |
+          set -e
+          curl -fL -o baksmali.jar \
+            https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
+          curl -fL -o smali.jar \
+            https://github.com/baksmali/smali/releases/download/3.0.10/smali-3.0.10-fat-release.jar
+
+          echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
+          echo "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  smali.jar" | sha256sum -c -
+
+      - name: Compare DEX
+        run: |
+          set -e
+
+          mkdir -p dex
+
+          unzip -j original/ZallRW.apk 'classes*.dex' -d dex
+
+          java -Xmx5g -jar baksmali.jar disassemble dex/classes.dex -o original1
+          java -Xmx5g -jar baksmali.jar disassemble dex/classes2.dex -o original2
+
+          java -Xmx5g -jar smali.jar assemble original2 -o rebuilt.dex
+          java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o rebuilt
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          target = "Landroidx/compose/ui/graphics/drawscope/DrawScope;"
+
+          roots = {
+              "DEX ASLI classes.dex": Path("original1"),
+              "DEX ASLI classes2.dex": Path("original2"),
+              "DEX HASIL REBUILD": Path("rebuilt")
+          }
+
+          results = {}
+
+          for name, root in roots.items():
+              lines = set()
+              for file in root.rglob("*.smali"):
+                  for line in file.read_text(errors="replace").splitlines():
+                      if target in line:
+                          lines.add(line.strip())
+              results[name] = lines
+
+          summary = []
+          summary.append("# Hasil Diagnosis DrawScope\n")
+
+          for name, lines in results.items():
+              summary.append(f"## {name}")
+              summary.append(f"Jumlah referensi unik: **{len(lines)}**\n")
+
+          original = results["DEX ASLI classes2.dex"]
+          rebuilt = results["DEX HASIL REBUILD"]
+
+          summary.append("## Perbandingan")
+          summary.append(f"- Referensi hanya di DEX asli: **{len(original - rebuilt)}**")
+          summary.append(f"- Referensi hanya di hasil rebuild: **{len(rebuilt - original)}**")
+
+          summary.append("\n## Contoh perbedaan")
+          for line in sorted(original - rebuilt)[:10]:
+              summary.append(f"- Hanya asli: `{line}`")
+          for line in sorted(rebuilt - original)[:10]:
+              summary.append(f"- Hanya rebuild: `{line}`")
+
+          declaration = ".class public interface abstract Landroidx/compose/ui/graphics/drawscope/DrawScope;"
+
+          for name, root in roots.items():
+              found = any(
+                  declaration in file.read_text(errors="replace")
+                  for file in root.rglob("DrawScope.smali")
+              )
+              summary.append(f"\n- {name}: deklarasi interface ditemukan = **{found}**")
+
+          Path("summary.md").write_text("\n".join(summary))
+          print("\n".join(summary))
+          PY
+
+      - name: Publish Summary
+        if: always()
+        run: |
+          if [ -f summary.md ]; then
+            cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Diagnosis gagal. Periksa log langkah sebelumnya." >> "$GITHUB_STEP_SUMMARY"
+          fi
