@@ -1,4 +1,4 @@
-name: Compare Compose Smali
+name: Check DrawScope Type
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  compare:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -34,45 +34,66 @@ jobs:
           RELEASE=$(curl -fsSL "$API")
           B=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
           S=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
+          test -n "$B"
+          test -n "$S"
           curl -fL --retry 3 -o baksmali.jar "$B"
           curl -fL --retry 3 -o smali.jar "$S"
 
-      - name: Extract and rebuild DEX
+      - name: Extract original DEX files
         run: |
           set -e
-          unzip -p original/ZallRW.apk classes2.dex > original.dex
-          java -Xmx5g -jar baksmali.jar disassemble original.dex -o smali-original
+          mkdir -p original_dex report
+          unzip -j original/ZallRW.apk 'classes*.dex' -d original_dex
+          ls -lh original_dex
+
+      - name: Disassemble original classes2.dex
+        run: |
+          set -e
+          java -Xmx5g -jar baksmali.jar disassemble original_dex/classes2.dex -o smali-original
           java -Xmx5g -jar smali.jar assemble smali-original -o rebuilt.dex
           java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o smali-rebuilt
 
-      - name: Compare Compose file contents
+      - name: Inspect DrawScope declarations
         run: |
           set -e
-          mkdir -p report
 
-          for f in \
-            androidx/compose/ui/graphics/drawscope/DrawScope.smali \
-            androidx/compose/ui/graphics/drawscope/DrawScope$DefaultImpls.smali \
-            androidx/compose/ui/draw/CacheDrawScope.smali
-          do
-            name=$(basename "$f")
-            if [ -f "smali-original/$f" ] && [ -f "smali-rebuilt/$f" ]; then
-              diff -u "smali-original/$f" "smali-rebuilt/$f" \
-                > "report/$name.diff" || true
-              if [ -s "report/$name.diff" ]; then
-                echo "$name: ADA PERBEDAAN"
-              else
-                echo "$name: IDENTIK"
-              fi
+          TARGET="androidx/compose/ui/graphics/drawscope/DrawScope.smali"
+
+          {
+            echo "=== DEX ASLI ==="
+            if [ -f "smali-original/$TARGET" ]; then
+              grep -m 1 '^\.class ' "smali-original/$TARGET"
+              grep -E 'invoke-(interface|virtual|static|direct)' "smali-original/$TARGET" | head -20 || true
             else
-              echo "$name: FILE TIDAK DITEMUKAN"
+              echo "DrawScope tidak ditemukan"
             fi
-          done
+
+            echo
+            echo "=== DEX HASIL RAKITAN ==="
+            if [ -f "smali-rebuilt/$TARGET" ]; then
+              grep -m 1 '^\.class ' "smali-rebuilt/$TARGET"
+              grep -E 'invoke-(interface|virtual|static|direct)' "smali-rebuilt/$TARGET" | head -20 || true
+            else
+              echo "DrawScope tidak ditemukan"
+            fi
+          } | tee report/drawscope-type.txt
+
+      - name: Search duplicate DrawScope definitions
+        run: |
+          set -e
+          {
+            echo "=== DEFINISI DI DEX ASLI ==="
+            for f in original_dex/classes*.dex; do
+              echo "--- $f"
+              java -Xmx5g -jar baksmali.jar disassemble "$f" -o "scan-$(basename "$f" .dex)" >/dev/null 2>&1
+              grep -Rl '^\.class .*Landroidx/compose/ui/graphics/drawscope/DrawScope;' "scan-$(basename "$f" .dex)" || true
+            done
+          } | tee report/duplicate-check.txt
 
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZallRW-COMPOSE-DIFF
+          name: ZallRW-DRAWSCOPE-CHECK
           path: report/
           if-no-files-found: warn
