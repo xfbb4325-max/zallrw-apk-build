@@ -2,6 +2,9 @@ name: Build Zall RW Permanent APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-apk-permanent.yml'
 
 permissions:
   actions: read
@@ -85,7 +88,7 @@ jobs:
           old_url = "https://pusat-mlbb.vercel.app"
           new_url = "https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
           old_hash = "NzXW8cqbFRP2WXcG9sOywgAsFT+AISDgqH5gDne81JY="
-          new_hash = "6TrA5WmWqHbMEyJxaXQGvWc9tLfuHhOyiF/cr1E0dUc="
+          new_hash = "ED02jY6POswcMjticCshf50ywurppjVGa00Y+Oqf8ho="
 
           url_count = 0
           hash_count = 0
