@@ -37,10 +37,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Baksmali
+      - name: Download and Verify Baksmali
         run: |
-          curl -L -o baksmali.jar \
-          https://repo1.maven.org/maven2/org/smali/baksmali/3.0.10/baksmali-3.0.10.jar
+          curl -fL --retry 3 \
+            https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar \
+            -o baksmali.jar
+          test -s baksmali.jar
+          java -jar baksmali.jar --version
 
       - name: Analyze All DEX
         shell: bash
@@ -48,9 +51,7 @@ jobs:
           set -e
 
           mkdir -p decoded/original decoded/rebuilt
-
-          find original -name '*.apk' -print
-          find rebuilt -name '*.apk' -print
+          mkdir -p apk/original apk/rebuilt
 
           ORIG=$(find original -name '*.apk' | head -n 1)
           NEW=$(find rebuilt -name '*.apk' | head -n 1)
@@ -60,7 +61,6 @@ jobs:
             exit 1
           fi
 
-          mkdir -p apk/original apk/rebuilt
           unzip -oq "$ORIG" -d apk/original
           unzip -oq "$NEW" -d apk/rebuilt
 
@@ -76,7 +76,7 @@ jobs:
           {
             echo "# DrawScope Diagnosis - All DEX"
             echo
-            echo "## APK files"
+            echo "## APK"
             echo "Original: $ORIG"
             echo "Rebuilt: $NEW"
             echo
@@ -86,7 +86,7 @@ jobs:
             echo "## BackgroundNode locations"
             find decoded -name 'BackgroundNode.smali'
             echo
-            echo "## DrawScope declaration"
+            echo "## DrawScope declarations"
             grep -R -n -E '^\.class .*DrawScope' decoded || true
             echo
             echo "## DrawScope drawRect call sites"
@@ -100,7 +100,7 @@ jobs:
             find decoded -name 'BackgroundNode.smali' \
               -exec grep -n -E '^[[:space:]]*\.method.* (draw|drawRect)' {} \; || true
             echo
-            echo "## Changed DrawScope-related classes"
+            echo "## Changed Compose classes"
             for F in \
               androidx/compose/foundation/BackgroundNode.smali \
               androidx/compose/ui/graphics/drawscope/DrawScope.smali \
@@ -119,4 +119,3 @@ jobs:
 
       - name: Finish
         run: echo "Diagnosis completed."
-        
