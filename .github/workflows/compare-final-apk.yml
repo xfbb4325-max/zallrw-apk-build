@@ -1,5 +1,5 @@
 
-name: Compare Original and Crashed APK
+name: Final Compose Diagnosis
 
 on:
   workflow_dispatch:
@@ -9,10 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  compare:
+  diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
     steps:
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -36,143 +34,136 @@ jobs:
           run-id: "42722290672"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Smali
+      - name: Download Baksmali
         run: |
-          set -e
-
           curl -fL -o baksmali.jar \
             https://github.com/baksmali/smali/releases/download/3.0.10/baksmali-3.0.10-fat-release.jar
 
           echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
 
-      - name: Extract and Disassemble
+      - name: Extract Both APKs
         run: |
           set -e
 
-          ORIG=$(find original -type f -iname '*.apk' | head -n 1)
-          NEW=$(find crashed -type f -iname '*.apk' | head -n 1)
+          mkdir -p original/dex crashed/dex
 
-          test -n "$ORIG"
-          test -n "$NEW"
+          O=$(find original -maxdepth 1 -iname '*.apk' | head -1)
+          C=$(find crashed -maxdepth 1 -iname '*.apk' | head -1)
 
-          echo "APK asli: $ORIG"
-          echo "APK rebuild: $NEW"
+          test -n "$O"
+          test -n "$C"
 
-          mkdir -p dex/original dex/crashed
+          unzip -j "$O" 'classes*.dex' -d original/dex
+          unzip -j "$C" 'classes*.dex' -d crashed/dex
 
-          unzip -p "$ORIG" classes2.dex > dex/original/classes2.dex
-          unzip -p "$NEW" classes2.dex > dex/crashed/classes2.dex
+          for TYPE in original crashed; do
+            for DEX in "$TYPE"/dex/classes*.dex; do
+              NAME=$(basename "$DEX" .dex)
+              java -Xmx5g -jar baksmali.jar disassemble \
+                "$DEX" -o "$TYPE/$NAME"
+            done
+          done
 
-          sha256sum dex/original/classes2.dex dex/crashed/classes2.dex
-
-          java -Xmx5g -jar baksmali.jar disassemble \
-            dex/original/classes2.dex -o smali-original
-
-          java -Xmx5g -jar baksmali.jar disassemble \
-            dex/crashed/classes2.dex -o smali-crashed
-
-      - name: Compare Compose Classes
+      - name: Analyze DrawScope
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib
           import difflib
 
-          old = Path("smali-original")
-          new = Path("smali-crashed")
+          report = []
 
-          summary = []
+          def out(s=""):
+              report.append(s)
 
-          def add(s):
-              summary.append(s)
+          roots = {
+              "ASLI": [Path("original/classes"), Path("original/classes2")],
+              "CRASH": [Path("crashed/classes"), Path("crashed/classes2")]
+          }
 
-          def files(root):
-              return {
-                  str(p.relative_to(root)): p
-                  for p in root.rglob("*.smali")
-                  if "androidx/compose/" in str(p)
-              }
+          target = "Landroidx/compose/ui/graphics/drawscope/DrawScope;"
 
-          a = files(old)
-          b = files(new)
+          for label, dirs in roots.items():
+              out(f"## {label}")
 
-          common = set(a) & set(b)
-          changed = [p for p in sorted(common)
-                     if a[p].read_bytes() != b[p].read_bytes()]
-          added = sorted(set(b) - set(a))
-          removed = sorted(set(a) - set(b))
-
-          add("# HASIL PERBANDINGAN APK")
-          add("")
-          add(f"- Class Compose asli: {len(a)}")
-          add(f"- Class Compose rebuild: {len(b)}")
-          add(f"- Class berubah: {len(changed)}")
-          add(f"- Class tambahan: {len(added)}")
-          add(f"- Class hilang: {len(removed)}")
-          add("")
-
-          for name in [
-              "androidx/compose/ui/graphics/drawscope/DrawScope.smali",
-              "androidx/compose/foundation/BackgroundNode.smali"
-          ]:
-              add(f"## {name}")
-
-              if name not in a or name not in b:
-                  add("Class tidak ditemukan di salah satu DEX.")
-                  continue
-
-              diff = list(difflib.unified_diff(
-                  a[name].read_text(errors="replace").splitlines(),
-                  b[name].read_text(errors="replace").splitlines(),
-                  fromfile="ASLI",
-                  tofile="REBUILD",
-                  lineterm=""
-              ))
-
-              add("```diff")
-              add("\n".join(diff[:100]) if diff else "Tidak ada perbedaan.")
-              add("```")
-              add("")
-
-          add("## DAFTAR CLASS COMPOSE BERUBAH")
-          for p in changed[:40]:
-              add(f"- `{p}`")
-
-          add("")
-          add("## INSTRUKSI drawRect")
-          
-          for label, root in [
-              ("ASLI", old),
-              ("REBUILD", new)
-          ]:
-              add(f"### {label}")
-
-              count = 0
-              for p in root.rglob("*.smali"):
-                  if p.name not in ("DrawScope.smali", "BackgroundNode.smali"):
+              for root in dirs:
+                  if not root.exists():
                       continue
 
-                  lines = p.read_text(errors="replace").splitlines()
+                  matches = []
+                  for f in root.rglob("*.smali"):
+                      lines = f.read_text(errors="replace").splitlines()
+                      for n, line in enumerate(lines, 1):
+                          if target in line:
+                              matches.append((f, n, line.strip()))
 
-                  for i, line in enumerate(lines):
-                      if "drawRect" in line:
-                          add(f"`{p}:{i+1}`")
-                          for context in lines[max(0,i-3):i+4]:
-                              add(f"    {context.strip()}")
-                          count += 1
-                          if count >= 8:
-                              break
-                  if count >= 8:
-                      break
+                  out(f"### {root}: {len(matches)} referensi")
 
-              if count == 0:
-                  add("Tidak ditemukan.")
+                  for f, n, line in matches:
+                      if any(x in line for x in (
+                          "invoke-virtual",
+                          "invoke-interface",
+                          "invoke-static",
+                          "invoke-direct"
+                      )):
+                          out(f"- `{f}:{n}` {line}")
 
-          Path("result.md").write_text("\n".join(summary))
-          print("\n".join(summary))
+          out("\n## CLASS BACKGROUND NODE")
+
+          for label, dirs in roots.items():
+              out(f"### {label}")
+              found = []
+
+              for root in dirs:
+                  if root.exists():
+                      found.extend(root.rglob("*BackgroundNode*.smali"))
+
+              if not found:
+                  out("Tidak ditemukan.")
+              else:
+                  for f in found:
+                      out(f"- `{f}`")
+                      lines = f.read_text(errors="replace").splitlines()
+                      for n, line in enumerate(lines):
+                          if "DrawScope" in line or "drawRect" in line:
+                              out(f"  Baris {n+1}: `{line.strip()}`")
+
+          out("\n## PERBEDAAN CLASS PEMANGGIL")
+
+          for dex in ("classes", "classes2"):
+              a = Path(f"original/{dex}")
+              b = Path(f"crashed/{dex}")
+
+              if not a.exists() or not b.exists():
+                  continue
+
+              old = {
+                  str(p.relative_to(a)): p
+                  for p in a.rglob("*.smali")
+              }
+              new = {
+                  str(p.relative_to(b)): p
+                  for p in b.rglob("*.smali")
+              }
+
+              changed = [
+                  name for name in old.keys() & new.keys()
+                  if old[name].read_bytes() != new[name].read_bytes()
+              ]
+
+              out(f"### {dex}: {len(changed)} class berubah")
+
+              for name in changed:
+                  if any(x in name for x in (
+                      "BackgroundNode", "LayoutNode",
+                      "DrawScope", "GraphicsLayer"
+                  )):
+                      out(f"- `{name}`")
+
+          Path("result.md").write_text("\n".join(report))
+          print("\n".join(report))
           PY
 
-      - name: Publish Results
+      - name: Publish Summary
         if: always()
         run: |
           if [ -f result.md ]; then
