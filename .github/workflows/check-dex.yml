@@ -10,8 +10,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check available tools
+        run: |
+          java -version
+          unzip -v
+          curl --version
+          jq --version
+
       - name: Download original APK
         uses: actions/download-artifact@v4
         with:
@@ -20,60 +34,94 @@ jobs:
           run-id: "42607124854"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk unzip curl jq
-
       - name: Download Smali tools
         run: |
           set -e
+
           API="https://api.github.com/repos/baksmali/smali/releases/latest"
           RELEASE=$(curl -fsSL "$API")
 
-          B=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
-          S=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
+          BAKSMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
+          SMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
 
-          curl -fL -o baksmali.jar "$B"
-          curl -fL -o smali.jar "$S"
+          test -n "$BAKSMALI_URL"
+          test -n "$SMALI_URL"
+
+          curl -fL --retry 3 -o baksmali.jar "$BAKSMALI_URL"
+          curl -fL --retry 3 -o smali.jar "$SMALI_URL"
 
       - name: Extract original DEX
         run: |
+          set -e
+          mkdir -p report
+
           unzip -p original/ZallRW.apk classes2.dex > original.dex
+
+          test -s original.dex
+
+          sha256sum original.dex > report/checksums.txt
 
       - name: Rebuild DEX
         run: |
+          set -e
+
           java -Xmx5g -jar baksmali.jar disassemble original.dex -o smali-original
+
           java -Xmx5g -jar smali.jar assemble smali-original -o rebuilt.dex
+
+          test -s rebuilt.dex
+
+          sha256sum rebuilt.dex >> report/checksums.txt
+
+          stat -c '%n %s bytes' original.dex rebuilt.dex > report/sizes.txt
+
+      - name: Compare DEX files
+        run: |
+          if cmp -s original.dex rebuilt.dex; then
+            echo "DEX IDENTIK" > report/result.txt
+          else
+            echo "DEX BERBEDA" > report/result.txt
+          fi
+
+          cat report/result.txt
+          cat report/checksums.txt
+          cat report/sizes.txt
+
+      - name: Disassemble rebuilt DEX
+        run: |
+          set -e
+
           java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o smali-rebuilt
 
       - name: Compare Compose classes
         run: |
-          mkdir -p report
+          set -e
 
-          find smali-original smali-rebuilt \
-            -type f \( -name '*DrawScope*.smali' -o -name '*BackgroundNode*.smali' \) \
-            > report/compose-files.txt
+          mkdir -p report/compose
 
-          for f in \
-            androidx/compose/ui/graphics/drawscope/DrawScope.smali \
-            androidx/compose/foundation/BackgroundNode.smali
-          do
-            echo "===== $f =====" >> report/compose-diff.txt
+          find smali-original -type f \
+            \( -name '*DrawScope*.smali' -o -name '*BackgroundNode*.smali' \) \
+            | sort > report/compose/original-files.txt
 
-            if [ -f "smali-original/$f" ] && [ -f "smali-rebuilt/$f" ]; then
-              diff -u "smali-original/$f" "smali-rebuilt/$f" >> report/compose-diff.txt || true
-            else
-              echo "File tidak ditemukan di salah satu hasil." >> report/compose-diff.txt
-            fi
-          done
+          find smali-rebuilt -type f \
+            \( -name '*DrawScope*.smali' -o -name '*BackgroundNode*.smali' \) \
+            | sort > report/compose/rebuilt-files.txt
 
-          echo "Pemeriksaan selesai." >> report/compose-diff.txt
-          cat report/compose-diff.txt
+          diff -u \
+            report/compose/original-files.txt \
+            report/compose/rebuilt-files.txt \
+            > report/compose/file-list-diff.txt || true
+
+          echo "Pemeriksaan kelas Compose selesai."
+          echo "Jumlah kelas asli:"
+          wc -l < report/compose/original-files.txt
+          echo "Jumlah kelas hasil rakitan:"
+          wc -l < report/compose/rebuilt-files.txt
 
       - name: Upload diagnostic report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ZallRW-DEX-REPORT
           path: report/
-          if-no-files-found: error
+          if-no-files-found: warn
