@@ -1,0 +1,60 @@
+name: Check Original DEX Rebuild
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download original APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          run-id: "42607124854"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk unzip curl jq
+
+      - name: Download Smali tools
+        run: |
+          set -e
+          API="https://api.github.com/repos/baksmali/smali/releases/latest"
+          RELEASE=$(curl -fsSL "$API")
+
+          BAKSMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
+          SMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
+
+          curl -fL -o baksmali.jar "$BAKSMALI_URL"
+          curl -fL -o smali.jar "$SMALI_URL"
+
+      - name: Extract original DEX
+        run: |
+          unzip -p original/ZallRW.apk classes2.dex > original.dex
+          sha256sum original.dex
+
+      - name: Disassemble and assemble
+        run: |
+          java -Xmx5g -jar baksmali.jar disassemble original.dex -o smali2
+          java -Xmx5g -jar smali.jar assemble smali2 -o rebuilt.dex
+          sha256sum rebuilt.dex
+
+      - name: Compare DEX
+        run: |
+          if cmp -s original.dex rebuilt.dex; then
+            echo "DEX IDENTIK"
+          else
+            echo "DEX BERBEDA"
+          fi
+
+          echo "Ukuran DEX:"
+          stat -c '%n %s bytes' original.dex rebuilt.dex
