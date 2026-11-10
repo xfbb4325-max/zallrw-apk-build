@@ -1,5 +1,5 @@
 
-name: Compare BackgroundNode
+name: Scan DrawScope References
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  compare:
+  scan:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -43,97 +43,68 @@ jobs:
           curl -fL --retry 3 -o baksmali.jar "$B"
           curl -fL --retry 3 -o smali.jar "$S"
 
-      - name: Extract all DEX files
+      - name: Extract and disassemble
         run: |
           set -e
-          mkdir -p original_dex rebuilt_dex report
+          mkdir -p original_dex report
 
           unzip -j original/ZallRW.apk 'classes*.dex' -d original_dex
 
-          ls -lh original_dex
-
-      - name: Disassemble and rebuild all DEX files
-        run: |
-          set -e
-
           for dex in original_dex/classes*.dex; do
             name=$(basename "$dex" .dex)
-
             java -Xmx5g -jar baksmali.jar disassemble "$dex" -o "smali-$name"
-
-            java -Xmx5g -jar smali.jar assemble "smali-$name" -o "rebuilt_dex/$name.dex"
-
-            java -Xmx5g -jar baksmali.jar disassemble "rebuilt_dex/$name.dex" -o "rebuilt-$name"
           done
 
-      - name: Compare BackgroundNode contents
-        run: |
-          set -e
+          java -Xmx5g -jar smali.jar assemble smali-classes2 -o rebuilt.dex
+          java -Xmx5g -jar baksmali.jar disassemble rebuilt.dex -o smali-rebuilt
 
+      - name: Scan all DrawScope references
+        run: |
           python3 - <<'PY'
           from pathlib import Path
-          import difflib
 
-          report = Path("report")
-          report.mkdir(exist_ok=True)
+          target = "Landroidx/compose/ui/graphics/drawscope/DrawScope;"
+          roots = [
+              Path("smali-classes"),
+              Path("smali-classes2"),
+              Path("smali-rebuilt")
+          ]
 
-          original_files = {}
-          rebuilt_files = {}
+          out = Path("report/drawscope-references.txt")
+          out.parent.mkdir(exist_ok=True)
 
-          for root in Path(".").glob("smali-classes*"):
-              for f in root.rglob("*BackgroundNode*.smali"):
-                  original_files[str(f.relative_to(root))] = f
-
-          for root in Path(".").glob("rebuilt-classes*"):
-              for f in root.rglob("*BackgroundNode*.smali"):
-                  rebuilt_files[str(f.relative_to(root))] = f
-
-          names = sorted(set(original_files) | set(rebuilt_files))
-
-          with (report / "backgroundnode-summary.txt").open("w") as summary:
-              summary.write(f"Jumlah file asli: {len(original_files)}\n")
-              summary.write(f"Jumlah file rakitan: {len(rebuilt_files)}\n")
-
-              if not names:
-                  summary.write("BackgroundNode tidak ditemukan.\n")
-
-              for name in names:
-                  summary.write(f"\n{name}\n")
-
-                  if name not in original_files:
-                      summary.write("Hanya ditemukan di hasil rakitan.\n")
+          with out.open("w") as report:
+              for root in roots:
+                  report.write(f"\n===== {root} =====\n")
+                  if not root.exists():
+                      report.write("Folder tidak ditemukan\n")
                       continue
 
-                  if name not in rebuilt_files:
-                      summary.write("Hanya ditemukan di DEX asli.\n")
-                      continue
+                  count = 0
+                  for file in root.rglob("*.smali"):
+                      lines = file.read_text(errors="replace").splitlines()
+                      matches = [
+                          (i, line.strip())
+                          for i, line in enumerate(lines, 1)
+                          if target in line
+                      ]
 
-                  old = original_files[name].read_text(errors="replace").splitlines()
-                  new = rebuilt_files[name].read_text(errors="replace").splitlines()
+                      if matches:
+                          for number, line in matches:
+                              report.write(
+                                  f"{file}:{number}: {line}\n"
+                              )
+                              count += 1
 
-                  diff = list(difflib.unified_diff(
-                      old, new,
-                      fromfile="original/" + name,
-                      tofile="rebuilt/" + name,
-                      lineterm=""
-                  ))
+                  report.write(f"JUMLAH BARIS REFERENSI: {count}\n")
 
-                  if diff:
-                      summary.write("ADA PERBEDAAN ISI.\n")
-                      safe_name = name.replace("/", "_").replace("$", "_")
-                      (report / (safe_name + ".diff")).write_text(
-                          "\n".join(diff) + "\n"
-                      )
-                  else:
-                      summary.write("ISI IDENTIK.\n")
-
-          print((report / "backgroundnode-summary.txt").read_text())
+          print(out.read_text())
           PY
 
-      - name: Upload comparison report
+      - name: Upload scan report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZallRW-BACKGROUNDNODE-REPORT
+          name: ZallRW-DRAWSCOPE-REFERENCES
           path: report/
           if-no-files-found: warn
