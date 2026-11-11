@@ -113,14 +113,20 @@ jobs:
         run: |
           set -e
 
+          HOST="nvxgpmbakbzjyfjstdwl.supabase.co"
+          NEW_HASH=$(openssl s_client -connect "$HOST:443" -servername "$HOST" -verify_return_error -CApath /etc/ssl/certs </dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64 -w0)
+          test -n "$NEW_HASH"
+          export NEW_HASH
+
           python3 - <<'PY'
           from pathlib import Path
+          import os
 
           root = Path("smali2")
           old_url = "https://pusat-mlbb.vercel.app"
-          new_url = "https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
+          new_url = "https://nvxgpmbakbzjyfjstdwl.supabase.co/functions/v1/zallrw-api"
           old_hash = "NzXW8cqbFRP2WXcG9sOywgAsFT+AISDgqH5gDne81JY="
-          new_hash = "ED02jY6POswcMjticCshf50ywurppjVGa00Y+Oqf8ho="
+          new_hash = os.environ["NEW_HASH"]
 
           url_count = 0
           hash_count = 0
