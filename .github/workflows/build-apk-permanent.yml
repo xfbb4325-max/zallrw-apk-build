@@ -26,7 +26,7 @@ jobs:
           run-id: "42607124854"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Use preinstalled Android build tools
+      - name: Download Android build tools
         run: |
           set -e
           command -v java
@@ -35,13 +35,15 @@ jobs:
           command -v curl
           command -v jq
           command -v openssl
-          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          BUILD_TOOLS=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
-          test -n "$BUILD_TOOLS"
-          test -x "$BUILD_TOOLS/apksigner"
-          test -x "$BUILD_TOOLS/zipalign"
-          echo "$BUILD_TOOLS" >> "$GITHUB_PATH"
-          java -version
+          curl -fL --retry 3 https://dl.google.com/android/repository/build-tools_r35-linux.zip -o build-tools.zip
+          mkdir -p android-build-tools
+          unzip -q build-tools.zip -d android-build-tools
+          APKSIGNER=$(find android-build-tools -type f -name apksigner -print -quit)
+          ZIPALIGN=$(find android-build-tools -type f -name zipalign -print -quit)
+          test -n "$APKSIGNER"
+          test -n "$ZIPALIGN"
+          chmod +x "$APKSIGNER" "$ZIPALIGN"
+          echo "$(dirname "$APKSIGNER")" >> "$GITHUB_PATH"
           apksigner version
           zipalign -h >/dev/null 2>&1 || true
 
