@@ -20,8 +20,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk zip unzip curl jq
+          java -version
+          unzip -v | head -n 1
+          curl --version | head -n 1
+          jq --version
           curl -fsSL -o baksmali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar || true
           if [ ! -s baksmali.jar ]; then
             curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url' | xargs -r curl -fL -o baksmali.jar
