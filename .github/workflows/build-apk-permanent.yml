@@ -35,7 +35,8 @@ jobs:
           command -v curl
           command -v jq
           command -v openssl
-          curl -fL --retry 3 https://dl.google.com/android/repository/build-tools_r35-linux.zip -o build-tools.zip
+          curl -fL --retry 3 https://dl.google.com/android/repository/build-tools_r35.0.1_linux.zip -o build-tools.zip
+          echo "5993499f3229a021b89f87088c57242aeefaa62316bf3d69da7de40bfd5350f1  build-tools.zip" | sha256sum -c -
           mkdir -p android-build-tools
           unzip -q build-tools.zip -d android-build-tools
           APKSIGNER=$(find android-build-tools -type f -name apksigner -print -quit)
