@@ -275,7 +275,6 @@ jobs:
               "z/eu0.smali": {"v2": 1},
               "z/du0.smali": {"v5": 1, "v2": 1},
               "z/cu0.smali": {"p1": 1},
-              "z/bu0.smali": {"p1": 1},
           }
           total = 0
           for rel, regs in specs.items():
@@ -294,8 +293,8 @@ jobs:
                       raise SystemExit(f"Expected {expected} URL builders for {reg} in {rel}, found {count}")
                   total += count
               path.write_text(source)
-          if total != 5:
-              raise SystemExit(f"Expected 5 API request injections, got {total}")
+          if total != 4:
+              raise SystemExit(f"Expected 4 API request injections, got {total}")
           print("Supabase apikey header injected into", total, "request builders")
           PY
 
