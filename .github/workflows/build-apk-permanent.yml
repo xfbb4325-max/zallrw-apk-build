@@ -313,9 +313,9 @@ jobs:
           disable-animations: true
           script: |
             set -eu
-            AAPT="$(find android-build-tools -type f -name aapt -print -quit)"
-            test -n "$AAPT"
-            PKG=$("$AAPT" dump badging ZallRW-PERMANENT.apk | sed "s/^package: name=//; s/ .*//; s/'//g")
+            AAPT2="$(find android-build-tools -type f -name aapt2 -print -quit)"
+            test -n "$AAPT2"
+            PKG=$("$AAPT2" dump badging ZallRW-PERMANENT.apk | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
             test -n "$PKG"
             adb install -r ZallRW-PERMANENT.apk
             adb logcat -c
