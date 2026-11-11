@@ -45,6 +45,7 @@ jobs:
           test -n "$ZIPALIGN"
           chmod +x "$APKSIGNER" "$ZIPALIGN"
           echo "$(dirname "$APKSIGNER")" >> "$GITHUB_PATH"
+          export PATH="$(dirname "$APKSIGNER"):$PATH"
           apksigner version
           zipalign -h >/dev/null 2>&1 || true
 
