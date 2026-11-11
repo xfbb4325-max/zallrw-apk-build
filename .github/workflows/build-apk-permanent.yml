@@ -312,15 +312,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            set -u
-            PKG=$(aapt dump badging ZallRW-PERMANENT.apk | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p")
-            test -n "$PKG" || { echo "FAIL: package name not found" > startup-result.txt; exit 1; }
-            adb install -r ZallRW-PERMANENT.apk
-            adb logcat -c
-            adb shell monkey -p "$PKG" 1 || true
-            sleep 25
-            adb logcat -d > startup-logcat.txt
-            if adb shell pidof "$PKG" >/dev/null 2>&1; then echo "PASS: app process stayed alive after launch" > startup-result.txt; else echo "FAIL: app process exited after launch" > startup-result.txt; fi
+            bash -c 'set -eu; AAPT="$(find android-build-tools -type f -name aapt -print -quit)"; test -n "$AAPT"; PKG=$("$AAPT" dump badging ZallRW-PERMANENT.apk | head -n 1 | cut -d "'" -f 2); test -n "$PKG"; adb install -r ZallRW-PERMANENT.apk; adb logcat -c; adb shell monkey -p "$PKG" 1 || true; sleep 25; adb logcat -d > startup-logcat.txt; if adb shell pidof "$PKG" >/dev/null 2>&1; then echo "PASS: app process stayed alive after launch" > startup-result.txt; else echo "FAIL: app process exited after launch" > startup-result.txt; fi'
 
       - name: Upload startup diagnostic logs
         if: always()
