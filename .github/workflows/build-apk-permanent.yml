@@ -257,18 +257,18 @@ jobs:
           import re
 
           key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52eGdwbWJha2J6anlmanN0ZHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzM3MTEsImV4cCI6MjEwOTkwOTcxMX0.JTSv1hqeJ9lCtRrLrE_L8h8Ph3Ot69XMUB3P9jInNIuRc"
-          helper = f""".class public final Lz/api;
+          helper = """.class public final Lz/api;
           .super Ljava/lang/Object;
 
           .method public static a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;
               .registers 3
               const-string v0, "apikey"
-              const-string v1, "{key}"
-              invoke-virtual {{p0, v0, v1}}, Lokhttp3/Request$Builder;->header(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+              const-string v1, "PLACEHOLDER"
+              invoke-virtual {p0, v0, v1}, Lokhttp3/Request$Builder;->header(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
               move-result-object p0
               return-object p0
           .end method
-          """
+          """.replace("PLACEHOLDER", key)
           Path("smali2/z/api.smali").write_text(helper)
 
           specs = {
@@ -283,10 +283,10 @@ jobs:
               source = path.read_text()
               for reg, expected in regs.items():
                   pattern = re.compile(
-                      r'(invoke-virtual \\{' + reg + r', [^}]+\\}, Lokhttp3/Request\\$Builder;->url\\(Ljava/lang/String;\\)Lokhttp3/Request\\$Builder;\\n\\s*move-result-object ' + reg + r')'
+                      r'(invoke-virtual \{' + reg + r', [^}]+\}, Lokhttp3/Request\$Builder;->url\(Ljava/lang/String;\)Lokhttp3/Request\$Builder;\n\s*move-result-object ' + reg + r')'
                   )
                   source, count = pattern.subn(
-                      lambda m: m.group(1) + "\\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\\n    move-result-object " + reg,
+                      lambda m: m.group(1) + "\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\n    move-result-object " + reg,
                       source,
                       count=expected
                   )
