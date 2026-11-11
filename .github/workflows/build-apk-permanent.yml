@@ -254,40 +254,45 @@ jobs:
           set -e
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          # Public client key only; privileged service-role credentials stay on the Edge Function.
           key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52eGdwbWJha2J6anlmanN0ZHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzM3MTEsImV4cCI6MjEwOTkwOTcxMX0.JTSv1hqeJ9lCtRrLrE_L8h8Ph3Ot69XMUB3P9jInNIuRc"
-          helper = """ .class public final Lz/api;
+          helper = f""".class public final Lz/api;
           .super Ljava/lang/Object;
 
           .method public static a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;
               .registers 3
               const-string v0, "apikey"
-              const-string v1, "%s"
-              invoke-virtual {p0, v0, v1}, Lokhttp3/Request$Builder;->header(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+              const-string v1, "{key}"
+              invoke-virtual {{p0, v0, v1}}, Lokhttp3/Request$Builder;->header(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
               move-result-object p0
               return-object p0
           .end method
-          """ % key
+          """
           Path("smali2/z/api.smali").write_text(helper)
 
           specs = {
-              "z/eu0.smali": [("move-result-object v2", "v2", 1)],
-              "z/du0.smali": [("move-result-object v5", "v5", 1), ("move-result-object v2", "v2", 1)],
-              "z/cu0.smali": [("move-result-object p1", "p1", 1)],
-              "z/bu0.smali": [("move-result-object p1", "p1", 1)],
+              "z/eu0.smali": {"v2": 1},
+              "z/du0.smali": {"v5": 1, "v2": 1},
+              "z/cu0.smali": {"p1": 1},
+              "z/bu0.smali": {"p1": 1},
           }
           total = 0
-          for rel, entries in specs.items():
+          for rel, regs in specs.items():
               path = Path("smali2") / rel
               source = path.read_text()
-              for needle, reg, expected in entries:
-                  # Insert directly after the URL() result; match only the first still-unpatched occurrence.
-                  inject = needle + "\\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\\n    move-result-object " + reg
-                  if source.count(needle) < expected:
-                      raise SystemExit(f"Missing request builder result {needle} in {rel}")
-                  source = source.replace(needle, inject, expected)
-                  total += expected
+              for reg, expected in regs.items():
+                  pattern = re.compile(
+                      r'(invoke-virtual \\{' + reg + r', [^}]+\\}, Lokhttp3/Request\\$Builder;->url\\(Ljava/lang/String;\\)Lokhttp3/Request\\$Builder;\\n\\s*move-result-object ' + reg + r')'
+                  )
+                  source, count = pattern.subn(
+                      lambda m: m.group(1) + "\\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\\n    move-result-object " + reg,
+                      source,
+                      count=expected
+                  )
+                  if count != expected:
+                      raise SystemExit(f"Expected {expected} URL builders for {reg} in {rel}, found {count}")
+                  total += count
               path.write_text(source)
           if total != 5:
               raise SystemExit(f"Expected 5 API request injections, got {total}")
