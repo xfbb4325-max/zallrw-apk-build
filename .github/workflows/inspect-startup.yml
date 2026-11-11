@@ -1,0 +1,54 @@
+name: Inspect ZallRW startup classes
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download original APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ZallRW-original
+          path: original
+          run-id: "42607124854"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk zip unzip curl jq
+          curl -fsSL -o baksmali.jar https://github.com/baksmali/smali/releases/download/v3.0.10/baksmali-3.0.10-fat-release.jar || true
+          if [ ! -s baksmali.jar ]; then
+            curl -fsSL https://api.github.com/repos/baksmali/smali/releases/latest | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url' | xargs -r curl -fL -o baksmali.jar
+          fi
+          test -s baksmali.jar
+      - name: Disassemble both DEX and export startup references
+        run: |
+          set -e
+          unzip -p original/ZallRW.apk classes.dex > classes.dex
+          unzip -p original/ZallRW.apk classes2.dex > classes2.dex
+          java -Xmx5g -jar baksmali.jar disassemble classes.dex -o smali1
+          java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          roots=[Path("smali1"),Path("smali2")]
+          terms=("com/zallrwv4/app/MainActivity","installSplashScreen","setKeepOnScreenCondition","getSplashScreenWaitPredicate","SplashScreen","onCreate(Landroid/os/Bundle;)V","setContentView")
+          hits=[]
+          for root in roots:
+            for p in root.rglob("*.smali"):
+              s=p.read_text(errors="replace")
+              if any(t in s for t in terms):
+                hits.append(p)
+          with zipfile.ZipFile("zallrw-startup-full.zip","w",zipfile.ZIP_DEFLATED) as z:
+            for p in hits: z.write(p,p.as_posix())
+          print("Exported",len(hits),"classes")
+          for p in hits: print(p)
+          PY
+      - name: Upload startup classes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-STARTUP-CLASSES-FULL
+          path: zallrw-startup-full.zip
