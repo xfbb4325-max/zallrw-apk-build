@@ -77,6 +77,38 @@ jobs:
           java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
           test -f smali2/z/c41.smali
 
+      - name: Export APK smali for API analysis
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path("smali2")
+          terms = ("api/redeem", "api/register", "api/device", "api/devices",
+                   "api/app/version", "redeemCode", "deviceId", "RequestBody",
+                   "Retrofit", "JSONObject", "application/json")
+          hits = []
+          for p in root.rglob("*.smali"):
+              try:
+                  s = p.read_text(errors="replace")
+              except Exception:
+                  continue
+              if any(t.lower() in s.lower() for t in terms):
+                  hits.append(p)
+          print("Relevant smali files:", len(hits))
+          with zipfile.ZipFile("zallrw-smali-analysis.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for p in hits:
+                  z.write(p, p.as_posix())
+          print("Archive created")
+          PY
+
+      - name: Upload smali analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-SMALI-ANALYSIS
+          path: zallrw-smali-analysis.zip
+          if-no-files-found: error
+
       - name: Update backend and certificate hash
         run: |
           set -e
