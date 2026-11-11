@@ -283,7 +283,7 @@ jobs:
               source = path.read_text()
               for reg, expected in regs.items():
                   pattern = re.compile(
-                      r'(invoke-virtual \{' + reg + r', [^}]+\}, Lokhttp3/Request\$Builder;->url\(Ljava/lang/String;\)Lokhttp3/Request\$Builder;\n\s*move-result-object ' + reg + r')'
+                      r'(invoke-virtual \{' + reg + r', [^}]+\}, Lokhttp3/Request\$Builder;->url\(Ljava/lang/String;\)Lokhttp3/Request\$Builder;(?:(?:\n\s*\.line \d+)?\s*)*\n\s*move-result-object ' + reg + r')'
                   )
                   source, count = pattern.subn(
                       lambda m: m.group(1) + "\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\n    move-result-object " + reg,
