@@ -143,12 +143,18 @@ jobs:
           path: zallrw-smali-analysis.zip
           if-no-files-found: error
 
-      - name: Update backend and certificate hash
+      - name: Update backend URL and match APK signing certificate
+        env:
+          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
         run: |
           set -e
+          test -f zallrw.keystore
+          test -n "$STORE_PASSWORD"
 
-          HOST="nvxgpmbakbzjyfjstdwl.supabase.co"
-          NEW_HASH=$(openssl s_client -connect "$HOST:443" -servername "$HOST" -verify_return_error -CApath /etc/ssl/certs </dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64 -w0)
+          NEW_HASH=$(keytool -exportcert \
+            -keystore zallrw.keystore \
+            -storepass "$STORE_PASSWORD" \
+            -alias zallrw | openssl dgst -sha256 -binary | base64 -w0)
           test -n "$NEW_HASH"
           export NEW_HASH
 
@@ -164,31 +170,24 @@ jobs:
 
           url_count = 0
           hash_count = 0
-
           for path in root.rglob("*.smali"):
               content = path.read_text(errors="replace")
               url_count += content.count(old_url)
               content = content.replace(old_url, new_url)
-
               if path.as_posix().endswith("/z/c41.smali"):
                   hash_count = content.count(old_hash)
                   if hash_count != 2:
-                      raise SystemExit(
-                          f"Hash lama ditemukan {hash_count} kali; build dihentikan."
-                      )
+                      raise SystemExit(f"Expected 2 signing pins, found {hash_count}")
                   content = content.replace(old_hash, new_hash)
-
               path.write_text(content)
 
           if url_count == 0:
-              raise SystemExit("URL lama tidak ditemukan.")
-
+              raise SystemExit("Old backend URL not found")
           check = Path("smali2/z/c41.smali").read_text()
           if old_hash in check or check.count(new_hash) != 2:
-              raise SystemExit("Pemeriksaan hash sertifikat gagal.")
-
-          print("URL backend diganti:", url_count)
-          print("Hash sertifikat diganti:", hash_count)
+              raise SystemExit("APK signing certificate pin verification failed")
+          print("Backend URL replacements:", url_count)
+          print("APK signing certificate SHA-256 pin updated:", hash_count)
           PY
 
       - name: Make startup version check offline-safe
