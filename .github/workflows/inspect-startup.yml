@@ -43,7 +43,8 @@ jobs:
           for root in roots:
             for p in root.rglob("*.smali"):
               s=p.read_text(errors="replace")
-              if any(t in s for t in terms):
+              important = {"z/c41.smali","z/kc.smali","z/tb.smali","z/kh1.smali","z/bu0.smali","z/cu0.smali","z/du0.smali","z/eu0.smali","z/eo.smali","z/co.smali","z/sb.smali"}
+              if any(t in s for t in terms) or p.as_posix().endswith(tuple(important)) or "com/zallrwv4/app/" in p.as_posix():
                 hits.append(p)
           with zipfile.ZipFile("zallrw-startup-full.zip","w",zipfile.ZIP_DEFLATED) as z:
             for p in hits: z.write(p,p.as_posix())
