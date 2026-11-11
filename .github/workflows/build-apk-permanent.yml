@@ -26,10 +26,24 @@ jobs:
           run-id: "42607124854"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install tools
+      - name: Use preinstalled Android build tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk zip unzip curl jq apksigner zipalign openssl
+          set -e
+          command -v java
+          command -v unzip
+          command -v zip
+          command -v curl
+          command -v jq
+          command -v openssl
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          BUILD_TOOLS=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          test -n "$BUILD_TOOLS"
+          test -x "$BUILD_TOOLS/apksigner"
+          test -x "$BUILD_TOOLS/zipalign"
+          echo "$BUILD_TOOLS" >> "$GITHUB_PATH"
+          java -version
+          apksigner version
+          zipalign -h >/dev/null 2>&1 || true
 
       - name: Download Smali tools
         run: |
