@@ -77,6 +77,40 @@ jobs:
           java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
           test -f smali2/z/c41.smali
 
+      - name: Disassemble main DEX for splash-screen analysis
+        run: |
+          set -e
+          unzip -p original/ZallRW.apk classes.dex > classes.dex
+          test -s classes.dex
+          java -Xmx5g -jar baksmali.jar disassemble classes.dex -o smali1
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path("smali1")
+          hits = []
+          terms = ("getSplashScreenWaitPredicate", "setKeepOnScreenCondition",
+                   "installSplashScreen", "onSplashScreenExit", "MainActivity",
+                   "registerDevice", "getDeviceStatus", "isVip", "CustomSplashScreen")
+          for p in root.rglob("*.smali"):
+              try:
+                  s = p.read_text(errors="replace")
+              except Exception:
+                  continue
+              if "com/zallrwv4/app/" in p.as_posix() or any(t in s for t in terms):
+                  hits.append(p)
+          with zipfile.ZipFile("zallrw-main-dex-analysis.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for p in hits:
+                  z.write(p, p.as_posix())
+          print("Main DEX analysis files:", len(hits))
+          PY
+
+      - name: Upload main DEX analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-MAIN-DEX-ANALYSIS
+          path: zallrw-main-dex-analysis.zip
+          if-no-files-found: error
+
       - name: Export APK smali for API analysis
         run: |
           set -e
