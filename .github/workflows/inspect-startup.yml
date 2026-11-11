@@ -1,6 +1,9 @@
 name: Inspect ZallRW startup classes
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-startup.yml'
 permissions:
   actions: read
   contents: read
