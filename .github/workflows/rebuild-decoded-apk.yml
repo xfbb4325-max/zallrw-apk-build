@@ -123,6 +123,12 @@ jobs:
           export JAVA_TOOL_OPTIONS="-Xmx6g -XX:+UseG1GC"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
           test -s unsigned.apk
+          # Apktool omits Java ServiceLoader descriptors from META-INF. Restore the
+          # coroutine Android dispatcher providers so Dispatchers.Main can initialize.
+          mkdir -p service-descriptors/META-INF/services
+          cp "decoded/Zall RW_src/META-INF/services/"* service-descriptors/META-INF/services/
+          (cd service-descriptors && zip -q -r ../unsigned.apk META-INF/services)
+          unzip -l unsigned.apk | grep 'META-INF/services/kotlinx.coroutines.internal.MainDispatcherFactory'
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           BUILD_TOOLS="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           test -x "$BUILD_TOOLS/zipalign"
