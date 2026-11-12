@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: sengi-standard-2-ubuntu-2404
 
     steps:
       - name: Checkout repository
