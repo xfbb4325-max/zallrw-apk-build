@@ -124,13 +124,22 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cores 4
           script: |
             set -u
             mkdir -p diagnostics
+            adb wait-for-device
+            adb shell settings put global window_animation_scale 0 || true
+            adb shell settings put global transition_animation_scale 0 || true
+            adb shell settings put global animator_duration_scale 0 || true
             adb install -r ZallRW-rebuilt.apk 2>&1 | tee diagnostics/install.txt
             adb logcat -c
             adb shell monkey -p com.zallrwv4.app 1 2>&1 | tee diagnostics/launch.txt
-            sleep 8
+            sleep 30
+            adb shell dumpsys activity lastanr > diagnostics/lastanr.txt 2>&1 || true
+            adb shell dumpsys meminfo com.zallrwv4.app > diagnostics/meminfo.txt 2>&1 || true
+            adb shell dumpsys activity top > diagnostics/activity-top.txt 2>&1 || true
+            adb shell ps -A -o USER,PID,PPID,STAT,NAME > diagnostics/processes.txt 2>&1 || true
             adb shell dumpsys activity activities > diagnostics/activities.txt
             adb shell dumpsys window windows > diagnostics/windows.txt
             adb shell pidof com.zallrwv4.app > diagnostics/pid.txt || true
