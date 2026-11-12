@@ -78,7 +78,7 @@ jobs:
               "usesFramework": src.get("UsesFramework", {"ids": [1], "tag": None}),
               "sdkInfo": src.get("sdkInfo", {}),
               "packageInfo": src.get("PackageInfo", {}),
-              "versionInfo": src.get("VersionInfo", {}),
+              "versionInfo": {**src.get("VersionInfo", {}), "versionCode": int(str(src.get("VersionInfo", {}).get("versionCode", "19")).strip("\'\""))},
               "compressionType": src.get("compressionType", False),
               "sparseResources": src.get("sparseResources", False),
               "sharedLibrary": src.get("sharedLibrary", False),
