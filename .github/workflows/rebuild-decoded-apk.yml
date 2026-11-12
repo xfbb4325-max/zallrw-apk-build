@@ -1,0 +1,60 @@
+name: Rebuild Zall RW APK from decoded source
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/rebuild-decoded-apk.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reassemble source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find . -maxdepth 1 -type f -name 'source.part-*' | wc -l)" -eq 19
+          cat source.part-{00..18} > outer.zip
+          unzip -t outer.zip
+          mkdir outer
+          unzip -q outer.zip -d outer
+          INNER="$(find outer -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$INNER"
+          mkdir decoded
+          unzip -q "$INNER" -d decoded
+          test -s "decoded/Zall RW_src/AndroidManifest.xml"
+          test -s "decoded/Zall RW_src/apktool.json"
+
+      - name: Install APK build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool zipalign apksigner
+
+      - name: Rebuild decoded APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool b "decoded/Zall RW_src" -o unsigned.apk
+          test -s unsigned.apk
+          zipalign -f 4 unsigned.apk aligned.apk
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out ZallRW-rebuilt.apk aligned.apk
+          apksigner verify --verbose ZallRW-rebuilt.apk
+          sha256sum ZallRW-rebuilt.apk
+
+      - name: Upload rebuilt APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-rebuilt-debug
+          path: ZallRW-rebuilt.apk
+          if-no-files-found: error
+          retention-days: 7
