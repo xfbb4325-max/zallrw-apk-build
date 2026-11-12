@@ -103,6 +103,44 @@ jobs:
                   fixed.append(str(path))
           print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
+
+      - name: Point APK to new Zall RW backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          OLD='https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app'
+          NEW='https://nvxgpmbakbzjyfjstdwl.supabase.co/functions/v1/zallrw-api-v2'
+          python3 - <<'PY'
+          from pathlib import Path
+          old = "https://zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
+          new = "https://nvxgpmbakbzjyfjstdwl.supabase.co/functions/v1/zallrw-api-v2"
+          root = Path("decoded/Zall RW_src")
+          hits = []
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              try:
+                  data = path.read_bytes()
+                  old_b = old.encode()
+                  if old_b in data:
+                      count = data.count(old_b)
+                      path.write_bytes(data.replace(old_b, new.encode()))
+                      hits.append((str(path), count))
+              except (OSError, PermissionError):
+                  continue
+          total = sum(count for _, count in hits)
+          print("Patched backend URL occurrences:", total)
+          for path, count in hits:
+              print(f"{path}: {count}")
+          if total == 0:
+              raise SystemExit("STOP: old backend URL not found; APK was not rebuilt with an unverified change.")
+          PY
+          if grep -R -a -n 'zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app' 'decoded/Zall RW_src'; then
+            echo "ERROR: old backend URL remains in source"
+            exit 1
+          fi
+          curl --fail --silent --show-error "$NEW/health"
+
           # Generate the signing key first, then pin the app's built-in certificate check
           # to this exact build certificate. Keep the anti-debug and runtime integrity checks intact.
           keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
