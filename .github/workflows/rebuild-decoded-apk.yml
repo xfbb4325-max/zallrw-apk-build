@@ -31,21 +31,44 @@ jobs:
           test -s "decoded/Zall RW_src/apktool.json"
           echo "Decoded APK tree restored."
 
-      - name: Install apktool
+      - name: Install apktool and YAML support
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool
+          sudo apt-get install -y apktool python3-yaml
 
-      - name: Rebuild and sign APK
+      - name: Convert source metadata and rebuild
         shell: bash
         run: |
           set -euo pipefail
+          cd "decoded/Zall RW_src"
+          python3 - <<'PY'
+          import json, yaml
+          with open("apktool.json", encoding="utf-8") as f:
+              src = json.load(f)
+          out = {
+              "version": "2.7.0",
+              "apkFileName": src.get("apkFileName", "ZallRW.apk"),
+              "isFrameworkApk": src.get("isFrameworkApk", False),
+              "usesFramework": src.get("UsesFramework", {"ids": [1], "tag": None}),
+              "sdkInfo": src.get("sdkInfo", {}),
+              "packageInfo": src.get("PackageInfo", {}),
+              "versionInfo": src.get("VersionInfo", {}),
+              "compressionType": src.get("compressionType", False),
+              "sparseResources": src.get("sparseResources", False),
+              "sharedLibrary": src.get("sharedLibrary", False),
+              "doNotCompress": src.get("doNotCompress", []),
+              "unknownFiles": src.get("unknownFiles", {}),
+          }
+          with open("apktool.yml", "w", encoding="utf-8") as f:
+              yaml.safe_dump(out, f, sort_keys=False, allow_unicode=True)
+          PY
+          cd ../..
+          apktool b "decoded/Zall RW_src" -o unsigned.apk
+          test -s unsigned.apk
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           BUILD_TOOLS="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           test -x "$BUILD_TOOLS/zipalign"
           test -x "$BUILD_TOOLS/apksigner"
-          apktool b "decoded/Zall RW_src" -o unsigned.apk
-          test -s unsigned.apk
           "$BUILD_TOOLS/zipalign" -f 4 unsigned.apk aligned.apk
           keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out ZallRW-rebuilt.apk aligned.apk
