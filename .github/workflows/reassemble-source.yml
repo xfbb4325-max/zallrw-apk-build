@@ -1,0 +1,42 @@
+name: Reassemble Zall RW Source
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/reassemble-source.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  reassemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Reassemble and validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(find . -maxdepth 1 -type f -name 'source.part-*' | wc -l)
+          echo "Source parts found: $count"
+          test "$count" -eq 19
+          for i in $(seq -w 0 18); do
+            test -s "source.part-$i"
+          done
+          cat source.part-{00..18} > ZallRW-source-reassembled.zip
+          sha256sum ZallRW-source-reassembled.zip
+          unzip -t ZallRW-source-reassembled.zip
+          echo "Archive listing:"
+          unzip -l ZallRW-source-reassembled.zip | tail -n 8
+
+      - name: Upload reconstructed source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-source-reassembled
+          path: ZallRW-source-reassembled.zip
+          if-no-files-found: error
+          retention-days: 7
