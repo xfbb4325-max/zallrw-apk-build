@@ -103,6 +103,23 @@ jobs:
                   fixed.append(str(path))
           print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
+          # Generate the signing key first, then pin the app's built-in certificate check
+          # to this exact build certificate. Keep the anti-debug and runtime integrity checks intact.
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          CERT_HASH="$(keytool -exportcert -keystore debug.keystore -storepass android -alias androiddebugkey | openssl dgst -sha256 -binary | base64 -w0)"
+          export CERT_HASH
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path("decoded/Zall RW_src/smali_classes2/z/c41.smali")
+          s = p.read_text(encoding="utf-8")
+          old = 'NzXW8cqbFRP2WXcG9sOywgAsFT+AISDgqH5gDne81JY='
+          new = os.environ["CERT_HASH"]
+          if old not in s:
+              raise SystemExit("Expected signing certificate pin not found in c41.smali")
+          p.write_text(s.replace(old, new), encoding="utf-8")
+          print("Updated built-in certificate pin for this APK signing key:", new)
+          PY
           export JAVA_TOOL_OPTIONS="-Xmx6g -XX:+UseG1GC"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
           test -s unsigned.apk
@@ -111,7 +128,6 @@ jobs:
           test -x "$BUILD_TOOLS/zipalign"
           test -x "$BUILD_TOOLS/apksigner"
           "$BUILD_TOOLS/zipalign" -f 4 unsigned.apk aligned.apk
-          keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out ZallRW-rebuilt.apk aligned.apk
           "$BUILD_TOOLS/apksigner" verify --verbose ZallRW-rebuilt.apk
           sha256sum ZallRW-rebuilt.apk
