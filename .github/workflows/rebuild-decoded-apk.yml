@@ -63,6 +63,7 @@ jobs:
               yaml.safe_dump(out, f, sort_keys=False, allow_unicode=True)
           PY
           cd ../..
+          export JAVA_TOOL_OPTIONS="-Xmx6g"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
           test -s unsigned.apk
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
