@@ -135,8 +135,27 @@ jobs:
           if total == 0:
               raise SystemExit("STOP: old backend URL not found; APK was not rebuilt with an unverified change.")
           PY
+          python3 - <<'PY'
+          from pathlib import Path
+          old_host = "zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app"
+          new_host = "nvxgpmbakbzjyfjstdwl.supabase.co"
+          root = Path("decoded/Zall RW_src")
+          changed = 0
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              try:
+                  data = path.read_bytes()
+                  if old_host.encode() in data:
+                      count = data.count(old_host.encode())
+                      path.write_bytes(data.replace(old_host.encode(), new_host.encode()))
+                      changed += count
+              except OSError:
+                  continue
+          print("Patched Android network-security hostname references:", changed)
+          PY
           if grep -R -a -n 'zallrw-vip-backend-63rdvpmns-kedu065-maker.vercel.app' 'decoded/Zall RW_src'; then
-            echo "ERROR: old backend URL remains in source"
+            echo "ERROR: old backend hostname remains in source"
             exit 1
           fi
           curl --fail --silent --show-error "$NEW/health"
