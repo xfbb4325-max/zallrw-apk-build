@@ -13,7 +13,7 @@ permissions:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,10 +31,19 @@ jobs:
           test -s "decoded/Zall RW_src/apktool.json"
           echo "Decoded APK tree restored."
 
-      - name: Install apktool and YAML support
+      - name: Install Apktool 3.0.3
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y apktool python3-yaml
+          sudo apt-get install -y python3-yaml curl
+          sudo curl -fL --retry 3 \
+            https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_3.0.3.jar \
+            -o /usr/local/lib/apktool.jar
+          echo "dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  /usr/local/lib/apktool.jar" | sha256sum -c -
+          printf '#!/usr/bin/env bash\nexec java -jar /usr/local/lib/apktool.jar "$@"\n' | sudo tee /usr/local/bin/apktool >/dev/null
+          sudo chmod +x /usr/local/bin/apktool
+          apktool --version
 
       - name: Convert source metadata and rebuild
         shell: bash
@@ -46,7 +55,7 @@ jobs:
           with open("apktool.json", encoding="utf-8") as f:
               src = json.load(f)
           out = {
-              "version": "2.7.0",
+              "version": "3.0.3",
               "apkFileName": src.get("apkFileName", "ZallRW.apk"),
               "isFrameworkApk": src.get("isFrameworkApk", False),
               "usesFramework": src.get("UsesFramework", {"ids": [1], "tag": None}),
@@ -63,7 +72,7 @@ jobs:
               yaml.safe_dump(out, f, sort_keys=False, allow_unicode=True)
           PY
           cd ../..
-          export JAVA_TOOL_OPTIONS="-Xmx6g"
+          export JAVA_TOOL_OPTIONS="-Xmx6g -XX:+UseG1GC"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
           test -s unsigned.apk
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
