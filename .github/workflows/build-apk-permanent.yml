@@ -15,7 +15,7 @@ jobs:
   diagnose:
     name: Install and diagnose Zall RW APK
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -32,17 +32,73 @@ jobs:
       - name: Verify APK
         run: |
           set -eu
-          APK="original/ZallRW.apk"
-          test -s "$APK"
-          echo "APK found"
-          sha256sum "$APK"
-          unzip -t "$APK" | tail -n 2
+          test -s original/ZallRW.apk
+          sha256sum original/ZallRW.apk
+          unzip -t original/ZallRW.apk | tail -n 2
 
-      - name: Prepare diagnostics
+      - name: Prepare diagnostic script
         run: |
           mkdir -p diagnostics
-          echo "Diagnostic started" > diagnostics/result.txt
-          find "$ANDROID_HOME/build-tools" -name aapt -o -name aapt2
+
+          cat > diagnostics/run.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set +e
+
+          APK="${GITHUB_WORKSPACE}/original/ZallRW.apk"
+          LOG="${GITHUB_WORKSPACE}/diagnostics"
+          SDK="/usr/local/lib/android/sdk"
+
+          mkdir -p "$LOG"
+
+          echo "Starting APK diagnosis"
+          adb wait-for-device
+          adb shell getprop > "$LOG/device-properties.txt"
+
+          AAPT="$SDK/build-tools/37.0.0/aapt"
+          if [ ! -x "$AAPT" ]; then
+            AAPT="$(find "$SDK/build-tools" -type f -name aapt | head -n 1)"
+          fi
+
+          if [ -z "$AAPT" ] || [ ! -x "$AAPT" ]; then
+            echo "FAIL: aapt not found" > "$LOG/result.txt"
+            exit 1
+          fi
+
+          PKG=$("$AAPT" dump badging "$APK" 2>/dev/null |
+            sed -n "s/^package: name='\([^']*\)'.*/\1/p" |
+            head -n 1)
+
+          if [ -z "$PKG" ]; then
+            echo "FAIL: Could not identify package" > "$LOG/result.txt"
+            exit 1
+          fi
+
+          echo "$PKG" > "$LOG/package.txt"
+
+          adb install -r "$APK" > "$LOG/install.txt" 2>&1
+          if [ $? -ne 0 ]; then
+            echo "FAIL: Installation failed" > "$LOG/result.txt"
+            adb logcat -d -v threadtime > "$LOG/logcat.txt"
+            exit 1
+          fi
+
+          adb logcat -c
+          adb shell monkey -p "$PKG" 1 > "$LOG/launch.txt" 2>&1
+          sleep 30
+
+          adb logcat -d -v threadtime > "$LOG/logcat.txt"
+          adb shell dumpsys activity activities > "$LOG/activities.txt"
+          adb shell dumpsys package "$PKG" > "$LOG/package-details.txt"
+          adb shell pidof "$PKG" > "$LOG/process.txt" 2>&1
+
+          if [ -s "$LOG/process.txt" ]; then
+            echo "PASS: Application process is running" > "$LOG/result.txt"
+          else
+            echo "FAIL: Application process is not running" > "$LOG/result.txt"
+          fi
+          SCRIPT
+
+          chmod +x diagnostics/run.sh
 
       - name: Install and launch APK
         uses: reactivecircus/android-emulator-runner@v2
@@ -52,53 +108,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
-          script: |
-            set +e
-
-            APK="$GITHUB_WORKSPACE/original/ZallRW.apk"
-            LOG="$GITHUB_WORKSPACE/diagnostics"
-
-            adb wait-for-device
-            adb shell getprop > "$LOG/device-properties.txt"
-
-            AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print -quit)"
-            if [ -z "$AAPT" ]; then
-              AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 -print -quit)"
-              PKG=$("$AAPT" dump badging "$APK" 2>/dev/null | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
-            else
-              PKG=$("$AAPT" dump badging "$APK" 2>/dev/null | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
-            fi
-
-            if [ -z "$PKG" ]; then
-              echo "FAIL: Could not identify package" > "$LOG/result.txt"
-              exit 1
-            fi
-
-            echo "Package: $PKG" > "$LOG/package.txt"
-
-            adb install -r "$APK" > "$LOG/install.txt" 2>&1
-            INSTALL_CODE=$?
-
-            if [ "$INSTALL_CODE" -ne 0 ]; then
-              echo "FAIL: Installation failed" > "$LOG/result.txt"
-              adb logcat -d > "$LOG/logcat.txt"
-              exit 1
-            fi
-
-            adb logcat -c
-            adb shell monkey -p "$PKG" 1 > "$LOG/launch.txt" 2>&1
-            sleep 30
-
-            adb logcat -d -v threadtime > "$LOG/logcat.txt"
-            adb shell dumpsys activity activities > "$LOG/activities.txt"
-            adb shell dumpsys package "$PKG" > "$LOG/package-details.txt"
-            adb shell pidof "$PKG" > "$LOG/process.txt" 2>&1
-
-            if [ -s "$LOG/process.txt" ]; then
-              echo "PASS: Application process is running" > "$LOG/result.txt"
-            else
-              echo "FAIL: Application process is not running" > "$LOG/result.txt"
-            fi
+          script: bash "${{ github.workspace }}/diagnostics/run.sh"
 
       - name: Upload diagnostic report
         if: always()
@@ -108,3 +118,4 @@ jobs:
           path: diagnostics/
           if-no-files-found: warn
           retention-days: 7
+          
