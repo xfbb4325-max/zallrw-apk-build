@@ -146,7 +146,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 6144 -cores 4
           script: |
             set -u
             mkdir -p diagnostics
@@ -154,10 +154,19 @@ jobs:
             adb shell settings put global window_animation_scale 0 || true
             adb shell settings put global transition_animation_scale 0 || true
             adb shell settings put global animator_duration_scale 0 || true
-            adb install -r ZallRW-rebuilt.apk 2>&1 | tee diagnostics/install.txt
+            # Avoid slow incremental installation and grant the app's declared runtime
+            # permissions before launch so the permission controller cannot obscure startup.
+            adb install --no-incremental -r ZallRW-rebuilt.apk 2>&1 | tee diagnostics/install.txt
+            adb shell pm grant com.zallrwv4.app android.permission.READ_EXTERNAL_STORAGE || true
+            adb shell pm grant com.zallrwv4.app android.permission.WRITE_EXTERNAL_STORAGE || true
+            adb shell pm grant com.zallrwv4.app android.permission.POST_NOTIFICATIONS || true
+            adb shell appops set com.zallrwv4.app MANAGE_EXTERNAL_STORAGE allow || true
+            adb shell appops set com.zallrwv4.app SYSTEM_ALERT_WINDOW allow || true
             adb logcat -c
             adb shell monkey -p com.zallrwv4.app 1 2>&1 | tee diagnostics/launch.txt
-            sleep 30
+            # The obfuscated app performs substantial first-run dex verification on
+            # the emulator; allow it to finish before deciding startup has failed.
+            sleep 120
             adb shell dumpsys activity lastanr > diagnostics/lastanr.txt 2>&1 || true
             adb shell dumpsys meminfo com.zallrwv4.app > diagnostics/meminfo.txt 2>&1 || true
             adb shell dumpsys activity top > diagnostics/activity-top.txt 2>&1 || true
