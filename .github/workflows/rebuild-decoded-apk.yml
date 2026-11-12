@@ -59,10 +59,7 @@ jobs:
               if isinstance(value, list):
                   return [normalize(v) for v in value]
               if isinstance(value, str):
-                  # The recovered apktool.json stores some metadata with
-                  # literal quote characters, e.g. "'19'". Remove only
-                  # this accidental wrapping and restore numeric types.
-                  match = re.fullmatch(r"'(-?\d+)'", value)
+                  match = re.fullmatch(r"'(-?\\d+)'", value)
                   if match:
                       return int(match.group(1))
                   if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
@@ -78,7 +75,7 @@ jobs:
               "usesFramework": src.get("UsesFramework", {"ids": [1], "tag": None}),
               "sdkInfo": src.get("sdkInfo", {}),
               "packageInfo": src.get("PackageInfo", {}),
-              "versionInfo": {**src.get("VersionInfo", {}), "versionCode": int(str(src.get("VersionInfo", {}).get("versionCode", "19")).strip("\'\""))},
+              "versionInfo": {**src.get("VersionInfo", {}), "versionCode": int(str(src.get("VersionInfo", {}).get("versionCode", "19")).strip("\\'\""))},
               "compressionType": src.get("compressionType", False),
               "sparseResources": src.get("sparseResources", False),
               "sharedLibrary": src.get("sharedLibrary", False),
@@ -96,15 +93,15 @@ jobs:
           fixed = []
           for path in root.rglob("*.smali"):
               try:
-                  text = path.read_text(encoding="utf-8")
+                  source = path.read_text(encoding="utf-8")
               except UnicodeDecodeError:
                   continue
-              lines = text.splitlines(keepends=True)
+              lines = source.splitlines(keepends=True)
               kept = [line for line in lines if line.strip() not in junk]
               if len(kept) != len(lines):
                   path.write_text("".join(kept), encoding="utf-8")
                   fixed.append(str(path))
-          print(f"Removed invalid decompiler heading lines from {len(fixed)} Smali file(s): {fixed}")
+          print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
           export JAVA_TOOL_OPTIONS="-Xmx6g -XX:+UseG1GC"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
@@ -119,7 +116,7 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --verbose ZallRW-rebuilt.apk
           sha256sum ZallRW-rebuilt.apk
 
-      - name: Test installation and launch
+      - name: Test installation and collect startup diagnostics
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -128,11 +125,18 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           script: |
-            set -e
-            adb install -r ZallRW-rebuilt.apk
-            adb shell monkey -p com.zallrwv4.app 1
-            sleep 20
-            adb shell pidof com.zallrwv4.app
+            set -u
+            mkdir -p diagnostics
+            adb install -r ZallRW-rebuilt.apk 2>&1 | tee diagnostics/install.txt
+            adb logcat -c
+            adb shell monkey -p com.zallrwv4.app 1 2>&1 | tee diagnostics/launch.txt
+            sleep 8
+            adb shell dumpsys activity activities > diagnostics/activities.txt
+            adb shell dumpsys window windows > diagnostics/windows.txt
+            adb shell pidof com.zallrwv4.app > diagnostics/pid.txt || true
+            adb logcat -d -v threadtime > diagnostics/logcat.txt
+            adb exec-out screencap -p > diagnostics/startup.png || true
+            echo "Startup diagnostics collected."
 
       - name: Upload rebuilt APK
         uses: actions/upload-artifact@v4
@@ -140,4 +144,13 @@ jobs:
           name: ZallRW-rebuilt-debug
           path: ZallRW-rebuilt.apk
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload startup diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-startup-diagnostics
+          path: diagnostics/
+          if-no-files-found: warn
           retention-days: 7
