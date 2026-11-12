@@ -89,6 +89,23 @@ jobs:
               yaml.safe_dump(out, f, sort_keys=False, allow_unicode=True)
           PY
           cd ../..
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("decoded/Zall RW_src")
+          junk = {"interfaces", "virtual methods"}
+          fixed = []
+          for path in root.rglob("*.smali"):
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              lines = text.splitlines(keepends=True)
+              kept = [line for line in lines if line.strip() not in junk]
+              if len(kept) != len(lines):
+                  path.write_text("".join(kept), encoding="utf-8")
+                  fixed.append(str(path))
+          print(f"Removed invalid decompiler heading lines from {len(fixed)} Smali file(s): {fixed}")
+          PY
           export JAVA_TOOL_OPTIONS="-Xmx6g -XX:+UseG1GC"
           apktool b "decoded/Zall RW_src" -o unsigned.apk
           test -s unsigned.apk
