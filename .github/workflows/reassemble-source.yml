@@ -40,3 +40,5 @@ jobs:
           path: ZallRW-source-reassembled.zip
           if-no-files-found: error
           retention-days: 7
+
+# Inspection run trigger: no application source changes.
