@@ -130,6 +130,20 @@ jobs:
               fi
             done
           } >> report/ignix-ui-inspection.txt
+          {
+            echo "ROOT SCAFFOLD AND NAV ITEM RENDERER"
+            for rel in "smali_classes2/z/bn0.smali" "smali/z/wa0.smali" "smali_classes2/z/ax.smali" "smali_classes2/z/qn0.smali"; do
+              f="$ROOT/$rel"
+              if [ -f "$f" ]; then
+                echo "===== $rel ====="
+                grep -n -E '^\\.method|^\\.end method|const-string.*(home|profile|settings|features|redeem|Home|Setting|Fitur|Redeem)|NavigationBar|NavHost|invoke-static.*Lz/(en0|c1|wa0)' "$f" | head -n 700 || true
+                sed -n '1,2600p' "$f"
+              fi
+            done
+            echo
+            echo "REDEEM COMPOSABLE SIGNATURES AND CALL SITES"
+            grep -n -B 8 -A 12 -E 'ServerBottomSheet|Lz/b4;->|Redeem Code' "$ROOT/smali/z/b4.smali" "$ROOT/smali_classes2/z/j91.smali" 2>/dev/null | head -n 1000 || true
+          } >> report/ignix-ui-inspection.txt
           echo "Inspection report generated."
       - name: Upload inspection report
         uses: actions/upload-artifact@v4
