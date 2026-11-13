@@ -142,6 +142,24 @@ jobs:
           print("IGNIX app label and system notification branding applied.")
           PY
 
+      - name: Remove settings item from bottom navigation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("decoded/Zall RW_src/smali/z/au.smali")
+          s = p.read_text(encoding="utf-8")
+          old = """    filled-new-array {v6, v8, v10}, [Lz/wn0;
+"""
+          new = """    filled-new-array {v6, v8}, [Lz/wn0;
+"""
+          if s.count(old) != 1:
+              raise SystemExit("Bottom navigation list pattern mismatch; refusing unsafe patch")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          print("Removed only the Settings bottom-navigation item; its route and feature code remain intact.")
+          PY
+
       - name: Apply IGNIX dark red theme
         shell: bash
         run: |
