@@ -93,6 +93,20 @@ jobs:
           } >> report/ignix-ui-inspection.txt
           cp "$ROOT/AndroidManifest.xml" report/
           cp "$ROOT/apktool.json" report/
+          {
+            echo "SCREEN COMPOSABLE TARGETS: tc, o51, j91, mu0"
+            for cls in tc o51 j91 mu0; do
+              f=$(find "$ROOT/smali" "$ROOT/smali_classes2" -type f -name "$cls.smali" -print -quit)
+              if [ -n "$f" ]; then
+                echo "===== $f ====="
+                grep -n -E '^\.method|^\.end method|const-string.*(Settings|Profile|Redeem|Feature|VPN|Home|VIP|Server|Code|Pengaturan|Profil|Fitur)' "$f" | head -n 500 || true
+                sed -n '1,2200p' "$f"
+              fi
+            done
+            echo
+            echo "REDEEM ROUTE CALLSITES"
+            grep -R -n -E 'ServerBottomSheet|Redeem Code|RedeemCode|redeem' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 700 || true
+          } >> report/ignix-ui-inspection.txt
           echo "Inspection report generated."
       - name: Upload inspection report
         uses: actions/upload-artifact@v4
