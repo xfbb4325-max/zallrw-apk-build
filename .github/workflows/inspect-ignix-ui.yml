@@ -67,6 +67,19 @@ jobs:
             grep -R -n -E 'MainActivity|StartScreen\(|NavigationBar|BottomNavigation|Scaffold' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 500 || true
           } >> report/ignix-ui-inspection.txt
 
+          {
+            echo "NAVIGATION DATA BUILDER z/au"
+            sed -n '620,750p' "$ROOT/smali/z/au.smali"
+            echo
+            echo "NAVIGATION CALLBACK z/c1"
+            sed -n '300,455p' "$ROOT/smali/z/c1.smali"
+            echo
+            echo "THEME COLOR SCHEME BUILDER z/au"
+            sed -n '850,1035p' "$ROOT/smali/z/au.smali"
+            echo
+            echo "PROFILE AND REDEEM CONTAINER z/b4"
+            sed -n '2200,2530p' "$ROOT/smali/z/b4.smali"
+          } >> report/ignix-ui-inspection.txt
           cp "$ROOT/AndroidManifest.xml" report/
           cp "$ROOT/apktool.json" report/
           echo "Inspection report generated."
