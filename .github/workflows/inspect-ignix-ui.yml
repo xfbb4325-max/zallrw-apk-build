@@ -144,6 +144,22 @@ jobs:
             echo "REDEEM COMPOSABLE SIGNATURES AND CALL SITES"
             grep -n -B 8 -A 12 -E 'ServerBottomSheet|Lz/b4;->|Redeem Code' "$ROOT/smali/z/b4.smali" "$ROOT/smali_classes2/z/j91.smali" 2>/dev/null | head -n 1000 || true
           } >> report/ignix-ui-inspection.txt
+
+          {
+            echo "EXACT NAVIGATION AND SCREEN METHOD BODIES"
+            for rel in "smali/z/wa0.smali" "smali/z/au.smali" "smali/z/c1.smali" "smali_classes2/z/w5.smali" "smali_classes2/z/cn0.smali" "smali_classes2/z/j91.smali" "smali_classes2/z/mu0.smali" "smali_classes2/z/tc.smali" "smali_classes2/z/o51.smali" "smali/z/b4.smali"; do
+              f="$ROOT/$rel"
+              if [ -f "$f" ]; then
+                echo "===== $rel METHOD INDEX ====="
+                grep -n -E '^\.method|^\.end method' "$f" || true
+                echo "===== $rel FULL SOURCE ====="
+                cat "$f"
+              fi
+            done
+            echo
+            echo "NAV MODEL AND DESTINATION STRING CALLSITES"
+            grep -R -n -B 12 -A 20 -E 'Lz/au;->|Lz/c1;->|Lz/w5;->|Lz/cn0;->|Lz/b4;->|const-string.*"(home|profile|settings|appearance|features|redeem)"' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 1800 || true
+          } >> report/ignix-ui-inspection.txt
           echo "Inspection report generated."
       - name: Upload inspection report
         uses: actions/upload-artifact@v4
