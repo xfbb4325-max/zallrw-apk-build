@@ -1,0 +1,39 @@
+name: Inspect Zall RW VIP implementation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-vip-status.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore decoded APK source
+        run: |
+          set -euo pipefail
+          cat source.part-{00..18} > source.zip
+          unzip -q source.zip -d decoded
+          test -d "decoded/Zall RW_src"
+      - name: Find VIP status and redeem implementation
+        run: |
+          set -euo pipefail
+          ROOT="decoded/Zall RW_src"
+          {
+            echo "=== Manifest / package ==="
+            grep -n -E 'package=|versionName|versionCode' "$ROOT/AndroidManifest.xml" | head -30 || true
+            echo "=== VIP/redeem references ==="
+            grep -R -n -I -E 'vipUntil|isVip|VipStatus|vip_until|vip_tier|vip_is_vip|redeemCode|api/device|api/redeem|api/register' "$ROOT/smali"* 2>/dev/null | head -600 || true
+          } > vip-inspect.txt
+          test -s vip-inspect.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-VIP-implementation-inspection
+          path: vip-inspect.txt
+          retention-days: 7
