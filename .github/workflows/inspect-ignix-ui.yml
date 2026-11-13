@@ -90,3 +90,5 @@ jobs:
           path: report/
           if-no-files-found: error
           retention-days: 7
+
+# Refresh source inspection for the full IGNIX redesign.
