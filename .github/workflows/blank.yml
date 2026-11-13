@@ -1,39 +1,36 @@
 # CI and source inspection for the Zall RW APK
 name: CI
-
 on:
   push:
     branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Restore APK source and inspect VIP implementation
+      - name: Restore source and inspect VIP parsing
         shell: bash
         run: |
           set -euo pipefail
-          test "$(find . -maxdepth 1 -type f -name 'source.part-*' | wc -l)" -eq 19
           cat source.part-{00..18} > source.zip
           unzip -q source.zip -d decoded
           ROOT="decoded/Zall RW_src"
-          test -d "$ROOT"
           {
-            echo "=== VIP and redeem references ==="
-            grep -R -n -I -E 'vipUntil|isVip|VipStatus|vip_until|vip_tier|vip_is_vip|redeemCode|api/device|api/redeem|api/register' "$ROOT/smali"* 2>/dev/null | head -800 || true
-          } > vip-inspect.txt
-          echo "VIP reference count: $(wc -l < vip-inspect.txt)"
-          cat vip-inspect.txt
+            for spec in "smali_classes2/z/cu0.smali:170:225" "smali_classes2/z/cu0.smali:640:700" "smali_classes2/z/cu0.smali:740:930" "smali_classes2/z/du0.smali:220:310" "smali_classes2/z/du0.smali:1280:1370" "smali_classes2/z/eu0.smali:150:205" "smali_classes2/z/pb.smali:210:285"; do
+              IFS=: read -r file first last <<< "$spec"
+              echo "===== $file lines $first-$last ====="
+              sed -n "${first},${last}p" "$ROOT/$file"
+            done
+          } > vip-context.txt
+          cat vip-context.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ZallRW-VIP-implementation-inspection
-          path: vip-inspect.txt
+          name: ZallRW-VIP-parser-context
+          path: vip-context.txt
           retention-days: 7
