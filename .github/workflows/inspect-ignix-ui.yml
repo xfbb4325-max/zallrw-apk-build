@@ -107,6 +107,29 @@ jobs:
             echo "REDEEM ROUTE CALLSITES"
             grep -R -n -E 'ServerBottomSheet|Redeem Code|RedeemCode|redeem' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 700 || true
           } >> report/ignix-ui-inspection.txt
+          {
+            echo "ROOT NAV HOST AND NAV MODEL"
+            for rel in "smali_classes2/z/en0.smali" "smali_classes2/z/an0.smali" "smali_classes2/z/un0.smali" "smali_classes2/z/rb.smali" "smali_classes2/z/wn0.smali"; do
+              f="$ROOT/$rel"
+              if [ -f "$f" ]; then
+                echo "===== $rel ====="
+                grep -n -E '^\\.method|^\\.end method|const-string.*(home|profile|settings|features|redeem|Home|Profil|Pengaturan|Fitur|Redeem)|filled-new-array|NavHost|NavigationBar' "$f" | head -n 600 || true
+                sed -n '1,1800p' "$f"
+              fi
+            done
+            echo
+            echo "HOME FEATURE UI CONTEXT"
+            grep -n -B 100 -A 260 'const-string.*"Fitur"' "$ROOT/smali_classes2/z/f91.smali" || true
+            echo
+            echo "FEATURE AND REDEEM COMPOSABLE METHOD SIGNATURES"
+            for rel in "smali_classes2/z/f91.smali" "smali/z/b4.smali" "smali_classes2/z/tc.smali" "smali_classes2/z/o51.smali"; do
+              f="$ROOT/$rel"
+              if [ -f "$f" ]; then
+                echo "===== $rel ====="
+                grep -n -E '^\\.method|^\\.end method|const-string.*(Fitur|Redeem|Code|Server|Bypass|Damage|Enemy|Lock|Overlay|Smooth)' "$f" | head -n 700 || true
+              fi
+            done
+          } >> report/ignix-ui-inspection.txt
           echo "Inspection report generated."
       - name: Upload inspection report
         uses: actions/upload-artifact@v4
