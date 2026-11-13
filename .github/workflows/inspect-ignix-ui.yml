@@ -53,6 +53,20 @@ jobs:
             grep -R -n -E 'ColorScheme|darkColorScheme|lightColorScheme|MaterialTheme|#FF[0-9A-Fa-f]{6}' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 400 || true
           } > report/ignix-ui-inspection.txt
 
+          {
+            echo "NAV ROUTE STRING AND NAV MODEL SEARCH"
+            grep -R -n -E 'const-string[^,]*, "(home|profile|settings|features|redeem|Home|Profil|Fitur|Redeem)"|filled-new-array.*wn0|NavHost|NavigationBarItem' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 700 || true
+            echo
+            echo "APP THEME ENTRYPOINT SEARCH"
+            grep -R -n -E 'darkColorScheme|lightColorScheme|ColorSchemeKt|MaterialThemeKt|ThemeKt|0xFF[0-9A-Fa-f]{6}' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 700 || true
+            echo
+            echo "VIP STATUS UI METHOD"
+            if [ -f "$ROOT/smali/z/xl.smali" ]; then sed -n '3000,3650p' "$ROOT/smali/z/xl.smali"; fi
+            echo
+            echo "APP ENTRY AND ACTIVITY REFERENCES"
+            grep -R -n -E 'MainActivity|StartScreen\(|NavigationBar|BottomNavigation|Scaffold' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 500 || true
+          } >> report/ignix-ui-inspection.txt
+
           cp "$ROOT/AndroidManifest.xml" report/
           cp "$ROOT/apktool.json" report/
           echo "Inspection report generated."
