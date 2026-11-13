@@ -1,0 +1,65 @@
+name: Inspect IGNIX UI Source
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-ignix-ui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reassemble decoded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find . -maxdepth 1 -type f -name 'source.part-*' | wc -l)" -eq 19
+          cat source.part-{00..18} > source.zip
+          unzip -q source.zip -d decoded
+          ROOT="decoded/Zall RW_src"
+          test -s "$ROOT/AndroidManifest.xml"
+
+          mkdir -p report
+          {
+            echo "IGNIX SOURCE INSPECTION"
+            echo "======================="
+            echo
+            echo "NAVIGATION CLASS"
+            sed -n '1,260p' "$ROOT/smali/z/au.smali"
+            echo
+            echo "NAVIGATION RELATED CLASSES"
+            for f in "$ROOT/smali/z/pc.smali" "$ROOT/smali/z/m40.smali" "$ROOT/smali/z/wn0.smali"; do
+              if [ -f "$f" ]; then
+                echo "===== $f ====="
+                sed -n '1,260p' "$f"
+              fi
+            done
+            echo
+            echo "VIP DATA REFERENCES"
+            grep -R -n -E 'activatedAt|vipUntil|isVip|ProgressIndicator|Permanent' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 500 || true
+            echo
+            echo "REDEEM AND SCREEN REFERENCES"
+            grep -R -n -E 'Redeem Code|Enter your VIP|Pilih Server|Pilih Rank|ServerBottomSheet|StartScreen' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 300 || true
+            echo
+            echo "THEME AND COLOR REFERENCES"
+            grep -R -n -E 'ColorScheme|darkColorScheme|lightColorScheme|MaterialTheme|#FF[0-9A-Fa-f]{6}' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 400 || true
+          } > report/ignix-ui-inspection.txt
+
+          cp "$ROOT/AndroidManifest.xml" report/
+          cp "$ROOT/apktool.json" report/
+          echo "Inspection report generated."
+      - name: Upload inspection report
+        uses: actions/upload-artifact@v4
+        with:
+          name: IGNIX-ui-inspection
+          path: report/
+          if-no-files-found: error
+          retention-days: 7
