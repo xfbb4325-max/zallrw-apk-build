@@ -104,6 +104,44 @@ jobs:
           print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
 
+      - name: Apply IGNIX brand identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("decoded/Zall RW_src")
+          strings = root / "res/values/strings.xml"
+          data = strings.read_text(encoding="utf-8")
+          old = '<string name="app_name">Zall RW</string>'
+          new = '<string name="app_name">IGNIX</string>'
+          if old not in data:
+              raise SystemExit("Expected app_name string was not found")
+          strings.write_text(data.replace(old, new, 1), encoding="utf-8")
+          replacements = {
+              "smali_classes2/com/zallrwv4/app/service/FloatingWindowService.smali": {
+                  '"Zall RW"': '"IGNIX"',
+                  '"Zall RW overlay aktif"': '"IGNIX overlay aktif"',
+              },
+              "smali_classes2/com/zallrwv4/app/vpn/FakeVpnService.smali": {
+                  '"Status koneksi VPN Zall RW"': '"Status koneksi VPN IGNIX"',
+                  '"Zall RW \\u00b7 "': '"IGNIX \\u00b7 "',
+              },
+              "smali_classes2/com/zallrwv4/app/worker/UpdateCheckWorker.smali": {
+                  '"Notifikasi update versi Zall RW"': '"Notifikasi update versi IGNIX"',
+                  '"Segera update aplikasi Zall RW untuk melanjutkan penggunaan."': '"Segera update aplikasi IGNIX untuk melanjutkan penggunaan."',
+                  '"Versi baru Zall RW sudah tersedia. Tap untuk update."': '"Versi baru IGNIX sudah tersedia. Tap untuk update."',
+              },
+          }
+          for relative, pairs in replacements.items():
+              path = root / relative
+              text = path.read_text(encoding="utf-8")
+              for before, after in pairs.items():
+                  text = text.replace(before, after)
+              path.write_text(text, encoding="utf-8")
+          print("IGNIX app label and system notification branding applied.")
+          PY
+
       - name: Point APK to new Zall RW backend
         shell: bash
         run: |
