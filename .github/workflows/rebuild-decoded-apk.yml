@@ -1,4 +1,5 @@
 name: Rebuild Zall RW APK from decoded source
+# Trigger a fresh APK rebuild for the latest IGNIX navigation patch.
 
 on:
   workflow_dispatch:
