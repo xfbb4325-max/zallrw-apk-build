@@ -69,16 +69,16 @@ jobs:
 
           {
             echo "NAVIGATION DATA BUILDER z/au"
-            sed -n '620,750p' "$ROOT/smali/z/au.smali"
+            sed -n '560,900p' "$ROOT/smali/z/au.smali"
             echo
             echo "NAVIGATION CALLBACK z/c1"
-            sed -n '300,455p' "$ROOT/smali/z/c1.smali"
+            sed -n '1,900p' "$ROOT/smali/z/c1.smali"
             echo
             echo "NAVIGATION LAMBDA DISPATCH z/w5"
-            sed -n '1,520p' "$ROOT/smali_classes2/z/w5.smali"
+            sed -n '1,900p' "$ROOT/smali_classes2/z/w5.smali"
             echo
             echo "NAVIGATION SETTINGS LAMBDA z/cn0"
-            sed -n '1,520p' "$ROOT/smali_classes2/z/cn0.smali"
+            sed -n '1,700p' "$ROOT/smali_classes2/z/cn0.smali"
             echo
             echo "ROUTE COMPOSABLE MAP z/pc and z/m40"
             for f in "$ROOT/smali/z/pc.smali" "$ROOT/smali/z/m40.smali"; do
