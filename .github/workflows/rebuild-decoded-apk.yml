@@ -142,6 +142,26 @@ jobs:
           print("IGNIX app label and system notification branding applied.")
           PY
 
+      - name: Apply IGNIX dark red theme
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("decoded/Zall RW_src/smali_classes2/com/zallrwv4/app/MainActivity.smali")
+          s = p.read_text(encoding="utf-8")
+          call = "    invoke-static/range {v4 .. v9}, Lz/rd1;->a(ZZILz/s70;Landroidx/compose/runtime/Composer;I)V"
+          if s.count(call) != 1:
+              raise SystemExit("Theme call mismatch; refusing unsafe patch")
+          patch = """    # IGNIX dark appearance and red accent
+              const/4 v4, 0x1
+              const/4 v5, 0x0
+              const v6, -0x1ac6cb
+          """
+          p.write_text(s.replace(call, patch + call, 1), encoding="utf-8")
+          print("Applied IGNIX dark/red Material theme; application feature logic untouched.")
+          PY
+
       - name: Point APK to new Zall RW backend
         shell: bash
         run: |
