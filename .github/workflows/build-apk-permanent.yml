@@ -308,6 +308,19 @@ jobs:
           apksigner verify --verbose ZallRW-PERMANENT.apk
           rm -f zallrw.keystore
 
+      - name: Read APK launcher metadata
+        run: |
+          set -e
+          AAPT2=$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)
+          test -n "$AAPT2"
+          BADGING=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk")
+          PKG=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+          ACTIVITY=$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+          test -n "$PKG"
+          test -n "$ACTIVITY"
+          echo "APK_PKG=$PKG" >> "$GITHUB_ENV"
+          echo "APK_ACTIVITY=$ACTIVITY" >> "$GITHUB_ENV"
+
       - name: Smoke-test APK startup in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -317,11 +330,8 @@ jobs:
           disable-animations: false
           script: |
             set -eu
-            AAPT2=$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)
-            test -n "$AAPT2"
-            BADGING=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk")
-            PKG=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
-            ACTIVITY=$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+            PKG="$APK_PKG"
+            ACTIVITY="$APK_ACTIVITY"
             test -n "$PKG"
             test -n "$ACTIVITY"
             echo "APK package: $PKG"
