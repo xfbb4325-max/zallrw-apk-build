@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y python3-yaml curl
+          sudo apt-get install -y python3-yaml curl librsvg2-bin
           sudo curl -fL --retry 3 \
             https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_3.0.3.jar \
             -o /usr/local/lib/apktool.jar
@@ -105,6 +105,27 @@ jobs:
           print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
 
+      - name: Generate IGNIX phoenix launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/ignix.svg <<'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <defs><radialGradient id="b"><stop stop-color="#351014"/><stop offset="1" stop-color="#08090d"/></radialGradient><linearGradient id="f" x2=".8" y2="1"><stop stop-color="#ff7048"/><stop offset=".45" stop-color="#ed1728"/><stop offset="1" stop-color="#650817"/></linearGradient><linearGradient id="s"><stop stop-color="#fff"/><stop offset="1" stop-color="#68717f"/></linearGradient></defs>
+            <rect width="512" height="512" rx="112" fill="url(#b)"/>
+            <path d="M256 42 292 145 380 78 345 185 462 151 365 239 455 304 340 295 399 430 282 354 256 474 230 354 113 430 172 295 57 304 147 239 50 151 167 185 132 78 220 145Z" fill="url(#f)" stroke="#ff5544" stroke-width="7" stroke-linejoin="round"/>
+            <path d="M256 126c-19 42-58 66-88 94 32-7 57-2 79 12-38 15-61 47-70 84 30-19 56-23 79-15-24 36-27 75 0 122 27-47 24-86 0-122 23-8 49-4 79 15-9-37-32-69-70-84 22-14 47-19 79-12-30-28-69-52-88-94Z" fill="#090a0e" stroke="url(#s)" stroke-width="9" stroke-linejoin="round"/>
+            <path d="M179 238 92 201 155 276 208 267M333 238 420 201 357 276 304 267" fill="none" stroke="url(#s)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M236 306 256 276 276 306" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+          </svg>
+          SVG
+          mkdir -p /tmp/ignix-icons
+          for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            density=${spec%%:*}; size=${spec##*:}
+            rsvg-convert -w "$size" -h "$size" /tmp/ignix.svg > "/tmp/ignix-icons/$density.png"
+          done
+          rsvg-convert -w 512 -h 512 /tmp/ignix.svg > /tmp/ignix-icons/splash.png
+
       - name: Apply IGNIX brand identity
         shell: bash
         run: |
@@ -112,6 +133,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path("decoded/Zall RW_src")
+          import shutil
+          for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+              for icon_name in ("ic_launcher.png", "ic_launcher_round.png"):
+                  target = root / f"res/mipmap-{density}/{icon_name}"
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(f"/tmp/ignix-icons/{density}.png", target)
+          shutil.copyfile("/tmp/ignix-icons/splash.png", root / "res/drawable/splash_icon.png")
           strings = root / "res/values/strings.xml"
           data = strings.read_text(encoding="utf-8")
           old = '<string name="app_name">Zall RW</string>'
