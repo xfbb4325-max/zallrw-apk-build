@@ -328,7 +328,8 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: false
-          script: PKG="$APK_PKG"; ACTIVITY="$APK_ACTIVITY"; test -n "$PKG"; test -n "$ACTIVITY"; echo "APK package: $PKG"; echo "APK launcher activity: $ACTIVITY"; adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"; adb logcat -c; adb shell am start -W -n "$PKG/$ACTIVITY"; sleep 25; adb logcat -d > startup-logcat.txt; if adb shell pidof "$PKG" >/dev/null 2>&1; then echo "PASS: $PKG stayed alive after launching $ACTIVITY" > startup-result.txt; else echo "FAIL: $PKG process exited after launch" > startup-result.txt; exit 1; fi
+          script: >-
+            PKG="$APK_PKG"; ACTIVITY="$APK_ACTIVITY"; test -n "$PKG"; test -n "$ACTIVITY"; echo "APK package: $PKG"; echo "APK launcher activity: $ACTIVITY"; adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"; adb logcat -c; adb shell am start -W -n "$PKG/$ACTIVITY"; sleep 25; adb logcat -d > startup-logcat.txt; if adb shell pidof "$PKG" >/dev/null 2>&1; then echo "PASS: $PKG stayed alive after launching $ACTIVITY" > startup-result.txt; else echo "FAIL: $PKG process exited after launch" > startup-result.txt; exit 1; fi
 
       - name: Upload startup diagnostic logs
         if: always()
