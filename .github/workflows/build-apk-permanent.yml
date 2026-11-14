@@ -321,14 +321,10 @@ jobs:
             echo "Using known original application package: $PKG"
             adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
             adb logcat -c
-            adb shell monkey -p "$PKG" 1 || true
+            adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER --throttle 500 1 || true
             sleep 25
             adb logcat -d > startup-logcat.txt
-            if adb shell pidof "$PKG" >/dev/null 2>&1; then
-              echo "PASS: app process stayed alive after launch" > startup-result.txt
-            else
-              echo "FAIL: app process exited after launch" > startup-result.txt
-            fi
+            adb shell pidof "$PKG" >/dev/null 2>&1 && echo "PASS: app process stayed alive after launch" > startup-result.txt || echo "FAIL: app process exited after launch" > startup-result.txt
 
       - name: Upload startup diagnostic logs
         if: always()
