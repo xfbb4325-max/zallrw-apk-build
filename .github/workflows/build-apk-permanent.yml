@@ -321,8 +321,6 @@ jobs:
 
       - name: Smoke-test APK startup in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          ZALLRW_PACKAGE: ${{ steps.resolve_package.outputs.package }}
         with:
           api-level: 35
           arch: x86_64
@@ -330,8 +328,11 @@ jobs:
           disable-animations: false
           script: |
             set -eu
-            PKG="${ZALLRW_PACKAGE:?APK package output is missing}"
+            AAPT2="$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)"
+            test -n "$AAPT2"
+            PKG=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
             test -n "$PKG"
+            echo "Resolved package in emulator step: $PKG"
             adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
             adb logcat -c
             adb shell monkey -p "$PKG" 1 || true
