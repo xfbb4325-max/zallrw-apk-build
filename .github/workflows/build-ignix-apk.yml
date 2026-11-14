@@ -1,4 +1,5 @@
 name: IGNIX APK Build
+# Minimal CI verification to establish a clean build entry point.
 on:
   workflow_dispatch:
   push:
@@ -15,3 +16,4 @@ jobs:
           set -euo pipefail
           test "$(find . -maxdepth 1 -type f -name 'source.part-*' | wc -l)" -eq 19
           echo "All 19 source archive parts are present."
+          unzip -t <(cat source.part-{00..18}) | tail -n 2
