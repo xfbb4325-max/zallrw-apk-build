@@ -321,7 +321,7 @@ jobs:
             echo "Using known original application package: $PKG"
             adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
             adb logcat -c
-            adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER --throttle 500 1 || true
+            adb shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$PKG"
             sleep 25
             adb logcat -d > startup-logcat.txt
             adb shell pidof "$PKG" >/dev/null 2>&1 && echo "PASS: app process stayed alive after launch" > startup-result.txt || echo "FAIL: app process exited after launch" > startup-result.txt
