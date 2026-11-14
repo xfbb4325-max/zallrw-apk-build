@@ -323,9 +323,6 @@ jobs:
 
       - name: Smoke-test APK startup in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          APK_PKG: ${{ env.APK_PKG }}
-          APK_ACTIVITY: ${{ env.APK_ACTIVITY }}
         with:
           api-level: 35
           arch: x86_64
