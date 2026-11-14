@@ -316,7 +316,27 @@ jobs:
           profile: pixel_2
           disable-animations: false
           script: |
-            set -eu; echo 'Using package com.zallrwv4.app'; adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"; adb logcat -c; adb shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.zallrwv4.app; sleep 25; adb logcat -d > startup-logcat.txt; if adb shell pidof com.zallrwv4.app >/dev/null 2>&1; then echo 'PASS: app process stayed alive after launch' > startup-result.txt; else echo 'FAIL: app process exited after launch' > startup-result.txt; fi
+            set -eu
+            AAPT=$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt -print -quit)
+            test -n "$AAPT"
+            BADGING=$("$AAPT" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk")
+            PKG=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+            ACTIVITY=$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+            test -n "$PKG"
+            test -n "$ACTIVITY"
+            echo "APK package: $PKG"
+            echo "APK launcher activity: $ACTIVITY"
+            adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
+            adb logcat -c
+            adb shell am start -W -n "$PKG/$ACTIVITY"
+            sleep 25
+            adb logcat -d > startup-logcat.txt
+            if adb shell pidof "$PKG" >/dev/null 2>&1; then
+              echo "PASS: $PKG stayed alive after launching $ACTIVITY" > startup-result.txt
+            else
+              echo "FAIL: $PKG process exited after launch" > startup-result.txt
+              exit 1
+            fi
 
       - name: Upload startup diagnostic logs
         if: always()
