@@ -89,13 +89,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path("decoded/Zall RW_src")
-          import shutil
-          for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
-              for icon_name in ("ic_launcher.png", "ic_launcher_round.png"):
-                  target = root / f"res/mipmap-{density}/{icon_name}"
-                  target.parent.mkdir(parents=True, exist_ok=True)
-                  shutil.copyfile(f"/tmp/ignix-icons/{density}.png", target)
-          shutil.copyfile("/tmp/ignix-icons/splash.png", root / "res/drawable/splash_icon.png")
           junk = {"interfaces", "virtual methods"}
           fixed = []
           for path in root.rglob("*.smali"):
@@ -138,6 +131,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path("decoded/Zall RW_src")
+          import shutil
+          for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+              for icon_name in ("ic_launcher.png", "ic_launcher_round.png"):
+                  target = root / f"res/mipmap-{density}/{icon_name}"
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(f"/tmp/ignix-icons/{density}.png", target)
+          shutil.copyfile("/tmp/ignix-icons/splash.png", root / "res/drawable/splash_icon.png")
           strings = root / "res/values/strings.xml"
           data = strings.read_text(encoding="utf-8")
           old = '<string name="app_name">Zall RW</string>'
