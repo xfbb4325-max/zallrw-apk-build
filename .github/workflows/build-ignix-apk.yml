@@ -104,6 +104,18 @@ jobs:
           print(f"Removed invalid decompiler headings from {len(fixed)} Smali file(s): {fixed}")
           PY
 
+      - name: Audit decoded home screen UI components
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="decoded/Zall RW_src"
+          mkdir -p ui-audit
+          find "$ROOT" -type f \\( -name '*.smali' -o -name '*.xml' \\) | grep -Ei '(mainactivity|home|dashboard|screen|navigation|theme|color|style)' | sort > ui-audit/ui-files.txt || true
+          grep -R -n -E 'Pilih Server|Pilih Rank|Smooth Gameplay|Enemy Lag|VPN Gaming|Hubungkan|Belum Dipilih' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null > ui-audit/ui-string-references.txt || true
+          grep -R -n -E '0x(ff|FF)[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 2500 > ui-audit/hardcoded-colors.txt || true
+          find "$ROOT/res" -maxdepth 3 -type f \\( -path '*/values*/*' -o -path '*/drawable*/*' \\) | sort > ui-audit/resources.txt
+          echo "UI source audit collected."
+
       - name: Generate IGNIX phoenix launcher icon
         shell: bash
         run: |
@@ -324,7 +336,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cores 2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 2048 -cores 2
           script: |
             set -u
             mkdir -p diagnostics
@@ -369,6 +381,14 @@ jobs:
             echo "PASS: IGNIX MainActivity stayed alive without a fatal exception."
             echo "Startup diagnostics collected."
 
+
+      - name: Upload UI source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: IGNIX-ui-source-audit
+          path: ui-audit/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload startup diagnostics
         if: always()
