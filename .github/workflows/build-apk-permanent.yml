@@ -316,15 +316,7 @@ jobs:
           profile: pixel_2
           disable-animations: false
           script: |
-            set -eu
-            PKG="com.zallrwv4.app"
-            echo "Using known original application package: $PKG"
-            adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
-            adb logcat -c
-            adb shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$PKG"
-            sleep 25
-            adb logcat -d > startup-logcat.txt
-            adb shell pidof "$PKG" >/dev/null 2>&1 && echo "PASS: app process stayed alive after launch" > startup-result.txt || echo "FAIL: app process exited after launch" > startup-result.txt
+            set -eu; echo 'Using package com.zallrwv4.app'; adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"; adb logcat -c; adb shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.zallrwv4.app; sleep 25; adb logcat -d > startup-logcat.txt; if adb shell pidof com.zallrwv4.app >/dev/null 2>&1; then echo 'PASS: app process stayed alive after launch' > startup-result.txt; else echo 'FAIL: app process exited after launch' > startup-result.txt; fi
 
       - name: Upload startup diagnostic logs
         if: always()
