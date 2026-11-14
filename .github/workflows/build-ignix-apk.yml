@@ -118,12 +118,14 @@ jobs:
             <path d="M236 306 256 276 276 306" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
           </svg>
           SVG
+          sed '/<rect width="512" height="512" rx="112" fill="url(#b)"\/>/d' /tmp/ignix.svg > /tmp/ignix-foreground.svg
           mkdir -p /tmp/ignix-icons
           for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             density=${spec%%:*}; size=${spec##*:}
             rsvg-convert -w "$size" -h "$size" /tmp/ignix.svg > "/tmp/ignix-icons/$density.png"
           done
           rsvg-convert -w 512 -h 512 /tmp/ignix.svg > /tmp/ignix-icons/splash.png
+          rsvg-convert -w 512 -h 512 /tmp/ignix-foreground.svg > /tmp/ignix-icons/foreground.png
       - name: Apply IGNIX brand identity
         shell: bash
         run: |
@@ -138,6 +140,15 @@ jobs:
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(f"/tmp/ignix-icons/{density}.png", target)
           shutil.copyfile("/tmp/ignix-icons/splash.png", root / "res/drawable/splash_icon.png")
+          shutil.copyfile("/tmp/ignix-icons/foreground.png", root / "res/drawable/ignix_logo.png")
+          for icon_file in ("ic_launcher.xml", "ic_launcher_round.xml"):
+              icon_path = root / f"res/mipmap-anydpi/{icon_file}"
+              icon_xml = icon_path.read_text(encoding="utf-8")
+              if "@drawable/zall_logo" not in icon_xml:
+                  raise SystemExit(f"Expected adaptive icon foreground missing: {icon_file}")
+              icon_xml = icon_xml.replace("@drawable/zall_logo", "@drawable/ignix_logo")
+              icon_xml = icon_xml.replace("#ff5c1010", "#ff08090d")
+              icon_path.write_text(icon_xml, encoding="utf-8")
           strings = root / "res/values/strings.xml"
           data = strings.read_text(encoding="utf-8")
           old = '<string name="app_name">Zall RW</string>'
@@ -297,6 +308,13 @@ jobs:
           "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out ZallRW-rebuilt.apk aligned.apk
           "$BUILD_TOOLS/apksigner" verify --verbose ZallRW-rebuilt.apk
           sha256sum ZallRW-rebuilt.apk
+      - name: Upload rebuilt APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: IGNIX-installable-APK
+          path: ZallRW-rebuilt.apk
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Test installation and collect startup diagnostics
         uses: reactivecircus/android-emulator-runner@v2
@@ -306,7 +324,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 6144 -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096 -cores 2
           script: |
             set -u
             mkdir -p diagnostics
@@ -351,13 +369,6 @@ jobs:
             echo "PASS: IGNIX MainActivity stayed alive without a fatal exception."
             echo "Startup diagnostics collected."
 
-      - name: Upload rebuilt APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: IGNIX-installable-APK
-          path: ZallRW-rebuilt.apk
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload startup diagnostics
         if: always()
