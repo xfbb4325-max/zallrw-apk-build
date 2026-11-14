@@ -1,7 +1,7 @@
 name: Rebuild Zall RW APK from decoded source
 # Rebuild trigger: force the complete IGNIX APK pipeline after validating the Smali patch.
 
-"on":
+on:
   workflow_dispatch:
   push:
     paths:
