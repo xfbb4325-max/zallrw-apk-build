@@ -1,5 +1,5 @@
 name: Rebuild Zall RW APK from decoded source
-# Trigger a fresh APK rebuild for the latest IGNIX navigation patch.
+# Rebuild trigger: force the complete IGNIX APK pipeline after validating the Smali patch.
 
 "on":
   workflow_dispatch:
@@ -185,8 +185,12 @@ jobs:
 """
           if s.count(old) != 1:
               raise SystemExit("Bottom navigation list pattern mismatch; refusing unsafe patch")
-          p.write_text(s.replace(old, new, 1), encoding="utf-8")
-          print("Removed only the Settings bottom-navigation item; its route and feature code remain intact.")
+          updated = s.replace(old, new, 1)
+          p.write_text(updated, encoding="utf-8")
+          check = p.read_text(encoding="utf-8")
+          if old in check or new not in check:
+              raise SystemExit("Settings navigation verification failed")
+          print("Verified bottom navigation now contains only Home and Profile.")
           PY
 
       - name: Apply IGNIX dark red theme
