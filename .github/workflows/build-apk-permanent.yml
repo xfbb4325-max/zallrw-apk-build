@@ -317,9 +317,9 @@ jobs:
           disable-animations: false
           script: |
             set -eu
-            AAPT=$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt -print -quit)
-            test -n "$AAPT"
-            BADGING=$("$AAPT" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk")
+            AAPT2=$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)
+            test -n "$AAPT2"
+            BADGING=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk")
             PKG=$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
             ACTIVITY=$(printf '%s\n' "$BADGING" | sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
             test -n "$PKG"
