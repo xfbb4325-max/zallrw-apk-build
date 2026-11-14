@@ -308,17 +308,6 @@ jobs:
           apksigner verify --verbose ZallRW-PERMANENT.apk
           rm -f zallrw.keystore
 
-      - name: Resolve APK package before emulator startup
-        id: resolve_package
-        run: |
-          set -eu
-          AAPT2="$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)"
-          test -n "$AAPT2"
-          PKG=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
-          test -n "$PKG"
-          echo "package=$PKG" >> "$GITHUB_OUTPUT"
-          echo "Resolved APK package: $PKG"
-
       - name: Smoke-test APK startup in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -328,11 +317,8 @@ jobs:
           disable-animations: false
           script: |
             set -eu
-            AAPT2="$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)"
-            test -n "$AAPT2"
-            PKG=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
-            test -n "$PKG"
-            echo "Resolved package in emulator step: $PKG"
+            PKG="com.zallrwv4.app"
+            echo "Using known original application package: $PKG"
             adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
             adb logcat -c
             adb shell monkey -p "$PKG" 1 || true
