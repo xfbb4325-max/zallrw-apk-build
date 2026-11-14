@@ -1,5 +1,4 @@
-
-name: Zall RW APK Diagnostic Build
+name: Build Zall RW Permanent APK
 
 on:
   workflow_dispatch:
@@ -11,11 +10,13 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: zallrw-permanent-apk
+  cancel-in-progress: true
+
 jobs:
-  diagnose:
-    name: Install and diagnose Zall RW APK
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -29,93 +30,334 @@ jobs:
           run-id: "42607124854"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify APK
+      - name: Download Android build tools
+        run: |
+          set -e
+          command -v java
+          command -v unzip
+          command -v zip
+          command -v curl
+          command -v jq
+          command -v openssl
+          curl -fL --retry 3 https://dl.google.com/android/repository/build-tools_r35.0.1_linux.zip -o build-tools.zip
+          echo "5993499f3229a021b89f87088c57242aeefaa62316bf3d69da7de40bfd5350f1  build-tools.zip" | sha256sum -c -
+          mkdir -p android-build-tools
+          unzip -q build-tools.zip -d android-build-tools
+          APKSIGNER=$(find android-build-tools -type f -name apksigner -print -quit)
+          ZIPALIGN=$(find android-build-tools -type f -name zipalign -print -quit)
+          test -n "$APKSIGNER"
+          test -n "$ZIPALIGN"
+          chmod +x "$APKSIGNER" "$ZIPALIGN"
+          echo "$(dirname "$APKSIGNER")" >> "$GITHUB_PATH"
+          export PATH="$(dirname "$APKSIGNER"):$PATH"
+          apksigner version
+          zipalign -h >/dev/null 2>&1 || true
+
+      - name: Download Smali tools
+        run: |
+          set -e
+          API="https://api.github.com/repos/baksmali/smali/releases/latest"
+          RELEASE=$(curl -fsSL "$API")
+
+          BAKSMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="baksmali-3.0.10-fat-release.jar") | .browser_download_url')
+          SMALI_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name=="smali-3.0.10-fat-release.jar") | .browser_download_url')
+
+          test -n "$BAKSMALI_URL"
+          test -n "$SMALI_URL"
+
+          curl -fL --retry 3 -o baksmali.jar "$BAKSMALI_URL"
+          curl -fL --retry 3 -o smali.jar "$SMALI_URL"
+
+          echo "37ae4a41a8886e15c20b8362fa4250f96bbdb55e1a608199ad8b5dff068b588f  baksmali.jar" | sha256sum -c -
+          echo "32fa0e88a6c397b3922201adf5f3e534fbaed5a663c71d0c558c3ddce0af844a  smali.jar" | sha256sum -c -
+
+      - name: Restore permanent signing key
+        env:
+          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
+        run: |
+          set -e
+          test -f signing/zallrw.keystore.enc
+          test -n "$STORE_PASSWORD"
+
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in signing/zallrw.keystore.enc \
+            -out zallrw.keystore \
+            -pass env:STORE_PASSWORD
+
+          keytool -list \
+            -keystore zallrw.keystore \
+            -storepass "$STORE_PASSWORD" \
+            -alias zallrw
+
+      - name: Extract original DEX
+        run: |
+          unzip -p original/ZallRW.apk classes2.dex > classes2.dex
+          test -s classes2.dex
+
+      - name: Disassemble DEX
+        run: |
+          java -Xmx5g -jar baksmali.jar disassemble classes2.dex -o smali2
+          test -f smali2/z/c41.smali
+
+      - name: Disassemble main DEX for splash-screen analysis
+        run: |
+          set -e
+          unzip -p original/ZallRW.apk classes.dex > classes.dex
+          test -s classes.dex
+          java -Xmx5g -jar baksmali.jar disassemble classes.dex -o smali1
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path("smali1")
+          hits = []
+          terms = ("getSplashScreenWaitPredicate", "setKeepOnScreenCondition",
+                   "installSplashScreen", "onSplashScreenExit", "MainActivity",
+                   "registerDevice", "getDeviceStatus", "isVip", "CustomSplashScreen")
+          for p in root.rglob("*.smali"):
+              try:
+                  s = p.read_text(errors="replace")
+              except Exception:
+                  continue
+              if "com/zallrwv4/app/" in p.as_posix() or any(t in s for t in terms):
+                  hits.append(p)
+          with zipfile.ZipFile("zallrw-main-dex-analysis.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for p in hits:
+                  z.write(p, p.as_posix())
+          print("Main DEX analysis files:", len(hits))
+          PY
+
+      - name: Upload main DEX analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-MAIN-DEX-ANALYSIS
+          path: zallrw-main-dex-analysis.zip
+          if-no-files-found: error
+
+      - name: Export APK smali for API analysis
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path("smali2")
+          terms = ("api/redeem", "api/register", "api/device", "api/devices",
+                   "api/app/version", "redeemCode", "deviceId", "RequestBody",
+                   "Retrofit", "JSONObject", "application/json")
+          hits = []
+          for p in root.rglob("*.smali"):
+              try:
+                  s = p.read_text(errors="replace")
+              except Exception:
+                  continue
+              if any(t.lower() in s.lower() for t in terms):
+                  hits.append(p)
+          print("Relevant smali files:", len(hits))
+          with zipfile.ZipFile("zallrw-smali-analysis.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for p in hits:
+                  z.write(p, p.as_posix())
+          print("Archive created")
+          PY
+
+      - name: Upload smali analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-SMALI-ANALYSIS
+          path: zallrw-smali-analysis.zip
+          if-no-files-found: error
+
+      - name: Update backend URL and match APK signing certificate
+        env:
+          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
+        run: |
+          set -e
+          test -f zallrw.keystore
+          test -n "$STORE_PASSWORD"
+
+          NEW_HASH=$(keytool -exportcert \
+            -keystore zallrw.keystore \
+            -storepass "$STORE_PASSWORD" \
+            -alias zallrw | openssl dgst -sha256 -binary | base64 -w0)
+          test -n "$NEW_HASH"
+          export NEW_HASH
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          root = Path("smali2")
+          old_url = "https://pusat-mlbb.vercel.app"
+          new_url = "https://nvxgpmbakbzjyfjstdwl.supabase.co/functions/v1/zallrw-api"
+          old_hash = "NzXW8cqbFRP2WXcG9sOywgAsFT+AISDgqH5gDne81JY="
+          new_hash = os.environ["NEW_HASH"]
+
+          url_count = 0
+          hash_count = 0
+          for path in root.rglob("*.smali"):
+              content = path.read_text(errors="replace")
+              url_count += content.count(old_url)
+              content = content.replace(old_url, new_url)
+              if path.as_posix().endswith("/z/c41.smali"):
+                  hash_count = content.count(old_hash)
+                  if hash_count != 2:
+                      raise SystemExit(f"Expected 2 signing pins, found {hash_count}")
+                  content = content.replace(old_hash, new_hash)
+              path.write_text(content)
+
+          if url_count == 0:
+              raise SystemExit("Old backend URL not found")
+          check = Path("smali2/z/c41.smali").read_text()
+          if old_hash in check or check.count(new_hash) != 2:
+              raise SystemExit("APK signing certificate pin verification failed")
+          print("Backend URL replacements:", url_count)
+          print("APK signing certificate SHA-256 pin updated:", hash_count)
+          PY
+
+      - name: Preserve original version-check flow
+        run: |
+          set -e
+          grep -q 'api/app/version' smali2/z/bu0.smali
+          grep -q 'invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;' smali2/z/bu0.smali
+          echo "Original version-check flow preserved; backend URL is redirected to Supabase."
+
+      - name: Add Supabase publishable API key to app requests
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52eGdwbWJha2J6anlmanN0ZHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzM3MTEsImV4cCI6MjEwOTkwOTcxMX0.JTSv1hqeJ9lCtRrLrE_L8h8Ph3Ot69XMUB3P9jInNIuRc"
+          helper = """.class public final Lz/api;
+          .super Ljava/lang/Object;
+
+          .method public static a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;
+              .registers 3
+              const-string v0, "apikey"
+              const-string v1, "PLACEHOLDER"
+              invoke-virtual {p0, v0, v1}, Lokhttp3/Request$Builder;->header(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+              move-result-object p0
+              return-object p0
+          .end method
+          """.replace("PLACEHOLDER", key)
+          Path("smali2/z/api.smali").write_text(helper)
+
+          specs = {
+              "z/eu0.smali": {"v2": 1},
+              "z/du0.smali": {"v5": 1, "v2": 1},
+              "z/cu0.smali": {"p1": 1},
+              "z/bu0.smali": {"p1": 1},
+          }
+          total = 0
+          for rel, regs in specs.items():
+              path = Path("smali2") / rel
+              source = path.read_text()
+              for reg, expected in regs.items():
+                  pattern = re.compile(
+                      r'(invoke-virtual \{' + reg + r', [^}]+\}, Lokhttp3/Request\$Builder;->url\(Ljava/lang/String;\)Lokhttp3/Request\$Builder;(?:(?:\n\s*\.line \d+)?\s*)*\n\s*move-result-object ' + reg + r')'
+                  )
+                  source, count = pattern.subn(
+                      lambda m: m.group(1) + "\n    invoke-static {" + reg + "}, Lz/api;->a(Lokhttp3/Request$Builder;)Lokhttp3/Request$Builder;\n    move-result-object " + reg,
+                      source,
+                      count=expected
+                  )
+                  if count != expected:
+                      raise SystemExit(f"Expected {expected} URL builders for {reg} in {rel}, found {count}")
+                  total += count
+              path.write_text(source)
+          if total != 5:
+              raise SystemExit(f"Expected 5 API request injections, got {total}")
+          print("Supabase apikey header injected into", total, "request builders")
+          PY
+
+      - name: Assemble DEX
+        run: |
+          java -Xmx5g -jar smali.jar assemble smali2 -o classes2-new.dex
+          test -s classes2-new.dex
+
+      - name: Replace DEX in original APK
+        run: |
+          set -e
+          cp original/ZallRW.apk ZallRW-unsigned.apk
+
+          zip -d ZallRW-unsigned.apk classes2.dex
+          zip -d ZallRW-unsigned.apk 'META-INF/*.RSA' 'META-INF/*.DSA' 'META-INF/*.EC' 'META-INF/*.SF' 'META-INF/MANIFEST.MF' || true
+
+          cp classes2-new.dex classes2.dex
+          zip -q ZallRW-unsigned.apk classes2.dex
+
+          unzip -p ZallRW-unsigned.apk classes2.dex > verify.dex
+          cmp classes2.dex verify.dex
+
+      - name: Align APK
+        run: |
+          zipalign -f 4 ZallRW-unsigned.apk ZallRW-aligned.apk
+          zipalign -c 4 ZallRW-aligned.apk
+
+      - name: Sign APK
+        env:
+          STORE_PASSWORD: ${{ secrets.ZALLRW_STORE_PASSWORD }}
+        run: |
+          apksigner sign \
+            --ks zallrw.keystore \
+            --ks-key-alias zallrw \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:STORE_PASSWORD \
+            --out ZallRW-PERMANENT.apk \
+            ZallRW-aligned.apk
+
+          apksigner verify --verbose ZallRW-PERMANENT.apk
+          rm -f zallrw.keystore
+
+      - name: Resolve APK package before emulator startup
         run: |
           set -eu
-          test -s original/ZallRW.apk
-          sha256sum original/ZallRW.apk
-          unzip -t original/ZallRW.apk | tail -n 2
+          AAPT2="$(find "$GITHUB_WORKSPACE/android-build-tools" -type f -name aapt2 -print -quit)"
+          test -n "$AAPT2"
+          PKG=$("$AAPT2" dump badging "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)
+          test -n "$PKG"
+          echo "ZALLRW_PACKAGE=$PKG" >> "$GITHUB_ENV"
+          echo "Resolved APK package: $PKG"
 
-      - name: Prepare diagnostic script
-        run: |
-          mkdir -p diagnostics
-
-          cat > diagnostics/run.sh <<'SCRIPT'
-          #!/usr/bin/env bash
-          set +e
-
-          APK="${GITHUB_WORKSPACE}/original/ZallRW.apk"
-          LOG="${GITHUB_WORKSPACE}/diagnostics"
-          SDK="/usr/local/lib/android/sdk"
-
-          mkdir -p "$LOG"
-
-          echo "Starting APK diagnosis"
-          adb wait-for-device
-          adb shell getprop > "$LOG/device-properties.txt"
-
-          AAPT="$SDK/build-tools/37.0.0/aapt"
-          if [ ! -x "$AAPT" ]; then
-            AAPT="$(find "$SDK/build-tools" -type f -name aapt | head -n 1)"
-          fi
-
-          if [ -z "$AAPT" ] || [ ! -x "$AAPT" ]; then
-            echo "FAIL: aapt not found" > "$LOG/result.txt"
-            exit 1
-          fi
-
-          PKG=$("$AAPT" dump badging "$APK" 2>/dev/null |
-            sed -n "s/^package: name='\([^']*\)'.*/\1/p" |
-            head -n 1)
-
-          if [ -z "$PKG" ]; then
-            echo "FAIL: Could not identify package" > "$LOG/result.txt"
-            exit 1
-          fi
-
-          echo "$PKG" > "$LOG/package.txt"
-
-          adb install -r "$APK" > "$LOG/install.txt" 2>&1
-          if [ $? -ne 0 ]; then
-            echo "FAIL: Installation failed" > "$LOG/result.txt"
-            adb logcat -d -v threadtime > "$LOG/logcat.txt"
-            exit 1
-          fi
-
-          adb logcat -c
-          adb shell monkey -p "$PKG" 1 > "$LOG/launch.txt" 2>&1
-          sleep 30
-
-          adb logcat -d -v threadtime > "$LOG/logcat.txt"
-          adb shell dumpsys activity activities > "$LOG/activities.txt"
-          adb shell dumpsys package "$PKG" > "$LOG/package-details.txt"
-          adb shell pidof "$PKG" > "$LOG/process.txt" 2>&1
-
-          if [ -s "$LOG/process.txt" ]; then
-            echo "PASS: Application process is running" > "$LOG/result.txt"
-          else
-            echo "FAIL: Application process is not running" > "$LOG/result.txt"
-          fi
-          SCRIPT
-
-          chmod +x diagnostics/run.sh
-
-      - name: Install and launch APK
+      - name: Smoke-test APK startup in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          disable-animations: true
-          emulator-boot-timeout: 900
-          script: bash "${{ github.workspace }}/diagnostics/run.sh"
+          disable-animations: false
+          script: |
+            set -eu
+            PKG="${ZALLRW_PACKAGE}"
+            test -n "$PKG"
+            adb install -r "$GITHUB_WORKSPACE/ZallRW-PERMANENT.apk"
+            adb logcat -c
+            adb shell monkey -p "$PKG" 1 || true
+            sleep 25
+            adb logcat -d > startup-logcat.txt
+            if adb shell pidof "$PKG" >/dev/null 2>&1; then
+              echo "PASS: app process stayed alive after launch" > startup-result.txt
+            else
+              echo "FAIL: app process exited after launch" > startup-result.txt
+            fi
 
-      - name: Upload diagnostic report
+      - name: Upload startup diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZallRW-DIAGNOSTIC-REPORT
-          path: diagnostics/
+          name: ZallRW-STARTUP-DIAGNOSTICS
+          path: |
+            startup-result.txt
+            startup-logcat.txt
           if-no-files-found: warn
-          retention-days: 7
-          
+
+      - name: Require successful startup smoke test
+        run: |
+          cat startup-result.txt
+          grep -q '^PASS:' startup-result.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZallRW-PERMANENT
+          path: ZallRW-PERMANENT.apk
+          if-no-files-found: error
