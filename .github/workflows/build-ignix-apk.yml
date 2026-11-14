@@ -110,10 +110,10 @@ jobs:
           set -euo pipefail
           ROOT="decoded/Zall RW_src"
           mkdir -p ui-audit
-          find "$ROOT" -type f \\( -name '*.smali' -o -name '*.xml' \\) | grep -Ei '(mainactivity|home|dashboard|screen|navigation|theme|color|style)' | sort > ui-audit/ui-files.txt || true
+          find "$ROOT" -type f | grep -E '\.(smali|xml)$' | grep -Ei '(mainactivity|home|dashboard|screen|navigation|theme|color|style)' | sort > ui-audit/ui-files.txt || true
           grep -R -n -E 'Pilih Server|Pilih Rank|Smooth Gameplay|Enemy Lag|VPN Gaming|Hubungkan|Belum Dipilih' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null > ui-audit/ui-string-references.txt || true
           grep -R -n -E '0x(ff|FF)[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}' "$ROOT/smali" "$ROOT/smali_classes2" 2>/dev/null | head -n 2500 > ui-audit/hardcoded-colors.txt || true
-          find "$ROOT/res" -maxdepth 3 -type f \\( -path '*/values*/*' -o -path '*/drawable*/*' \\) | sort > ui-audit/resources.txt
+          find "$ROOT/res" -maxdepth 3 -type f | grep -E '/values[^/]*/|/drawable[^/]*/' | sort > ui-audit/resources.txt || true
           echo "UI source audit collected."
 
       - name: Generate IGNIX phoenix launcher icon
